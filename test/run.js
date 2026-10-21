@@ -395,6 +395,10 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     assert.strictEqual(e.getLayoutImage().bg, png);
     const back = new Engine(); back.load(JSON.parse(JSON.stringify(e.serialize())));
     assert.strictEqual(back.layout.bg, png); assert.strictEqual(back.layout.shapes.length, 2); assert.strictEqual(Object.keys(back.layout.pos).length, 5);
+    assert.deepStrictEqual(e.getShow().layout.labels, { name: true, addr: true, size: 11 });
+    e.setLayoutOptions({ addr: false, size: 99 });
+    assert.strictEqual(e.getShow().layout.labels.addr, false); assert.strictEqual(e.getShow().layout.labels.size, 24);
+    const back2 = new Engine(); back2.load(JSON.parse(JSON.stringify(e.serialize()))); assert.strictEqual(back2.layout.labels.addr, false);
     e.removeFixture(id0); assert.ok(!e.layout.pos[id0]);
     e.setLayoutImage(null); assert.strictEqual(e.getShow().layout.hasBg, false);
   });

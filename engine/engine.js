@@ -27,7 +27,7 @@ function defaultSettings() {
   };
 }
 
-const emptyLayout = () => ({ bg: null, bgVersion: 0, aspect: 16 / 9, pos: {}, shapes: [] });
+const emptyLayout = () => ({ bg: null, bgVersion: 0, aspect: 16 / 9, pos: {}, shapes: [], labels: { name: true, addr: true, size: 11 } });
 const SHAPES = ['rect', 'ellipse', 'line', 'triangle', 'text'];
 const COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
 const n01 = (v, d) => { const x = parseFloat(v); return Number.isFinite(x) ? clamp(x, -0.5, 1.5) : d; };
@@ -49,6 +49,7 @@ function sanitizeLayout(l) {
   if (validImage(l.bg)) { out.bg = l.bg; out.bgVersion = 1; }
   out.aspect = clamp(parseFloat(l.aspect) || 16 / 9, 0.2, 5);
   if (l.pos && typeof l.pos === 'object') for (const [id, p] of Object.entries(l.pos)) if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) out.pos[id] = { x: clamp(p.x, 0, 1), y: clamp(p.y, 0, 1) };
+  if (l.labels && typeof l.labels === 'object') out.labels = { name: l.labels.name !== false, addr: l.labels.addr !== false, size: clamp(parseInt(l.labels.size, 10) || 11, 8, 24) };
   if (Array.isArray(l.shapes)) out.shapes = l.shapes.slice(0, 500).filter((s) => s && typeof s.id === 'string').map((s) => cleanShape(s, s.id));
   return out;
 }
@@ -442,6 +443,14 @@ class Engine {
     if (toFront) this.layout.shapes.push(s); else this.layout.shapes.unshift(s);
     this.changed();
   }
+  setLayoutOptions(o) {
+    o = o || {};
+    const l = this.layout.labels;
+    if (o.name != null) l.name = !!o.name;
+    if (o.addr != null) l.addr = !!o.addr;
+    if (o.size != null) l.size = clamp(parseInt(o.size, 10) || 11, 8, 24);
+    this.changed();
+  }
   clearShapes() { this.layout.shapes = []; this.changed(); }
 
   // ----------------------------------------------------------------- effects
@@ -698,7 +707,7 @@ class Engine {
       cues: this.cues,
       currentCue: this.playback.current,
       effects: this.effects,
-      layout: { aspect: this.layout.aspect, hasBg: !!this.layout.bg, bgVersion: this.layout.bgVersion, pos: this.layout.pos, shapes: this.layout.shapes },
+      layout: { aspect: this.layout.aspect, hasBg: !!this.layout.bg, bgVersion: this.layout.bgVersion, pos: this.layout.pos, shapes: this.layout.shapes, labels: this.layout.labels },
       gm: Math.round(this.gm * 100),
       blackout: this.blackout,
       selection: this.selection,

@@ -374,7 +374,7 @@
 
   // ------------------------------------------------------------------ layout
   // Put fixtures on a plan: a background picture (stage plan, floor plan, photo) plus drawn shapes.
-  const lay = { tool: 'select', shape: null, bgUrl: null, bgVersion: -1, colour: '#8b5cf6', fill: false, nodes: new Map(), drag: null, draft: null, active: false };
+  const lay = { lock: false, tool: 'select', shape: null, bgUrl: null, bgVersion: -1, colour: '#8b5cf6', fill: false, nodes: new Map(), drag: null, draft: null, active: false };
   const SVGNS = 'http://www.w3.org/2000/svg';
   const sv = (tag, attrs) => { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -421,7 +421,7 @@
     lay.canvasEl = canvas; lay.w = w; lay.h = h;
     const svg = sv('svg', { viewBox: `0 0 1000 ${1000 / L.aspect}`, preserveAspectRatio: 'none' });
     const handles = el('div', { style: 'position:absolute;inset:0;pointer-events:none' });
-    const fxLayer = el('div', { style: 'position:absolute;inset:0' });
+    const fxLayer = el('div', { style: 'position:absolute;inset:0;pointer-events:none' });
     const band = el('div', { class: 'lay-band', style: 'display:none' });
     canvas.append(svg, fxLayer, handles, band);
     lay.svg = svg; lay.handles = handles; lay.band = band; lay.fxLayer = fxLayer;
@@ -456,22 +456,18 @@
     lay.handles.replaceChildren();
     for (const s of shapesNow()) {
       const g = sv('g', { 'data-sid': s.id });
-      const stroke = { stroke: s.color, 'stroke-width': s.width, 'vector-effect': 'non-scaling-stroke', fill: s.fill ? s.color : 'none', 'fill-opacity': s.fill ? 0.35 : 0, 'pointer-events': s.fill ? 'all' : 'visibleStroke' };
+      const stroke = { stroke: s.color, 'stroke-width': s.width, 'vector-effect': 'non-scaling-stroke', fill: s.fill ? s.color : 'none', 'fill-opacity': s.fill ? 0.35 : 0, 'pointer-events': lay.lock ? 'none' : 'all' };
       let main; let hit = null;
       const X = (v) => v * 1000; const Y = (v) => v * H;
       if (s.type === 'rect') main = sv('rect', { x: X(s.x), y: Y(s.y), width: X(s.w), height: Y(s.h), ...stroke });
       else if (s.type === 'ellipse') main = sv('ellipse', { cx: X(s.x + s.w / 2), cy: Y(s.y + s.h / 2), rx: X(s.w / 2), ry: Y(s.h / 2), ...stroke });
       else if (s.type === 'triangle') main = sv('polygon', { points: `${X(s.x + s.w / 2)},${Y(s.y)} ${X(s.x + s.w)},${Y(s.y + s.h)} ${X(s.x)},${Y(s.y + s.h)}`, ...stroke });
       else if (s.type === 'line') {
-        main = sv('line', { x1: X(s.x), y1: Y(s.y), x2: X(s.x2), y2: Y(s.y2), ...stroke, fill: 'none', 'stroke-linecap': 'round' });
-        hit = sv('line', { x1: X(s.x), y1: Y(s.y), x2: X(s.x2), y2: Y(s.y2), stroke: 'transparent', 'stroke-width': 22, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'stroke' });
+        main = sv('line', { x1: X(s.x), y1: Y(s.y), x2: X(s.x2), y2: Y(s.y2), ...stroke, fill: 'none', 'stroke-linecap': 'round', 'pointer-events': lay.lock ? 'none' : 'stroke' });
+        hit = sv('line', { x1: X(s.x), y1: Y(s.y), x2: X(s.x2), y2: Y(s.y2), stroke: 'transparent', 'stroke-width': 22, 'vector-effect': 'non-scaling-stroke', 'pointer-events': lay.lock ? 'none' : 'stroke' });
       } else {
-        main = sv('text', { x: X(s.x), y: Y(s.y), fill: s.color, 'font-size': s.size * px, 'font-family': 'system-ui, sans-serif', 'dominant-baseline': 'hanging', 'pointer-events': 'all' });
+        main = sv('text', { x: X(s.x), y: Y(s.y), fill: s.color, 'font-size': s.size * px, 'font-family': 'system-ui, sans-serif', 'dominant-baseline': 'hanging', 'pointer-events': lay.lock ? 'none' : 'all' });
         main.textContent = s.text || 'Text';
-      }
-      if (!s.fill && ['rect', 'ellipse', 'triangle'].includes(s.type)) {
-        // a fat invisible outline so thin shapes are easy to grab with a finger
-        hit = main.cloneNode(false); hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', 22); hit.setAttribute('pointer-events', 'stroke');
       }
       g.append(...[main, hit].filter(Boolean));
       if (s.text && s.type !== 'text') {
@@ -498,6 +494,13 @@
       const p = show.layout.pos[f.id];
       if (!p) continue;
       const n = el('div', { class: `lay-fx${sel.has(f.id) ? ' sel' : ''}${show.conflicts.includes(f.id) ? ' bad' : ''}`, 'data-fid': f.id, title: `${f.num} ${f.name}`, style: `left:${p.x * 100}%;top:${p.y * 100}%` }, String(f.num));
+      const lb = show.layout.labels || { name: true, addr: true, size: 11 };
+      if (lb.name || lb.addr) {
+        const lines = [];
+        if (lb.name) lines.push(f.name);
+        if (lb.addr) lines.push(`U${f.universe}·${pad(f.address, 3)}`);
+        n.appendChild(el('div', { class: 'lay-label', style: `font-size:${lb.size}px` }, lines.map((t) => el('div', {}, t))));
+      }
       lay.nodes.set(f.id, n);
       lay.fxLayer.appendChild(n);
     }
@@ -625,6 +628,7 @@
       el('div', { class: 'row' }, el('button', { class: 'primary', onclick: () => file.click() }, L.hasBg ? 'Change image…' : 'Choose image…'),
         L.hasBg ? el('button', { class: 'danger', onclick: () => call('setLayoutImage', null) }, 'Remove') : null, file),
       el('div', { class: 'hint' }, 'A stage plan, floor plan or photo. It is saved inside the show.'),
+      el('label', { class: 'hint', style: 'display:flex;gap:6px;align-items:center' }, el('input', { type: 'checkbox', checked: lay.lock, onchange: (e) => { lay.lock = e.target.checked; paintShapes(); } }), 'Lock shapes (so they can\'t be dragged by accident)'),
       el('h3', { style: 'margin-top:6px' }, 'Draw'),
       el('div', { class: 'chips' }, SHAPE_TOOLS.map(([id, label]) => el('button', { class: lay.tool === id ? 'primary' : '', onclick: () => { lay.tool = id; lay.canvasEl.classList.toggle('draw', id !== 'select'); drawSide(); } }, label))),
       el('div', { class: 'row' }, el('label', {}, 'Colour'),
@@ -641,6 +645,11 @@
     }
     parts.push(el('h3', { style: 'margin-top:6px' }, 'Fixtures', el('span', { class: 'grow' }),
       el('button', { class: ui.multi ? 'primary' : '', title: 'Tap several fixtures to select them together', onclick: () => { ui.multi = !ui.multi; drawSide(); } }, ui.multi ? 'Multi ✓' : 'Multi')));
+    const lb = L.labels || { name: true, addr: true, size: 11 };
+    parts.push(el('div', { class: 'row', style: 'flex-wrap:wrap' },
+      el('label', { style: 'width:auto;display:flex;gap:4px;align-items:center' }, el('input', { type: 'checkbox', checked: lb.name, onchange: (e) => call('setLayoutOptions', { name: e.target.checked }) }), 'Name'),
+      el('label', { style: 'width:auto;display:flex;gap:4px;align-items:center' }, el('input', { type: 'checkbox', checked: lb.addr, onchange: (e) => call('setLayoutOptions', { addr: e.target.checked }) }), 'Address'),
+      el('label', { style: 'width:auto' }, 'Size'), el('input', { type: 'number', min: 8, max: 24, value: lb.size, style: 'width:60px', onchange: (e) => call('setLayoutOptions', { size: e.target.value }) })));
     if (!show.patch.length) parts.push(el('div', { class: 'hint' }, 'Patch some fixtures first.'));
     else {
       parts.push(el('div', { class: 'hint' }, unplaced.length ? `${unplaced.length} not on the layout yet. Tap one to drop it in the middle, then drag it into place.` : 'All fixtures are placed. Drag to move; drag on empty space to box-select.'));

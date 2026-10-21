@@ -145,3 +145,4 @@ td input.n { width: 72px; }
   #top { padding-top: calc(8px + env(safe-area-inset-top)); padding-left: calc(14px + env(safe-area-inset-left)); padding-right: calc(14px + env(safe-area-inset-right)); }
   #cmdbar { padding-bottom: calc(6px + env(safe-area-inset-bottom)); padding-left: calc(14px + env(safe-area-inset-left)); padding-right: calc(14px + env(safe-area-inset-right)); }
 }
+.lay-label { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 2px; white-space: nowrap; text-align: center; font-weight: 500; line-height: 1.15; background: rgba(0,0,0,.65); border-radius: 4px; padding: 1px 4px; color: #fff; text-shadow: none; pointer-events: none; }
