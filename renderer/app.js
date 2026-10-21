@@ -1117,3 +1117,40 @@
 
   boot();
 })();
+
+// Apple Pencil fallback. Some iPad web views deliver Pencil touches as pointer events but never
+// turn them into clicks or slider moves. This turns a pen tap into a click and lets the pen drag sliders.
+(function penFallback() {
+  let down = null, clicked = false;
+  document.addEventListener('click', () => { clicked = true; }, true);
+  const setRange = (r, e) => {
+    const b = r.getBoundingClientRect();
+    const min = parseFloat(r.min || 0), max = parseFloat(r.max || 100), step = parseFloat(r.step || 1);
+    let v = min + Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)) * (max - min);
+    v = Math.round(v / step) * step;
+    if (String(v) !== r.value) { r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); }
+  };
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'pen') return;
+    clicked = false;
+    const range = e.target.closest && e.target.closest('input[type=range]');
+    down = { x: e.clientX, y: e.clientY, t: e.target, range: range && !range.disabled ? range : null };
+    if (down.range) setRange(down.range, e);
+  }, true);
+  document.addEventListener('pointermove', (e) => {
+    if (down && down.range && e.pointerType === 'pen') setRange(down.range, e);
+  }, true);
+  document.addEventListener('pointerup', (e) => {
+    if (!down || e.pointerType !== 'pen') return;
+    const d = down; down = null;
+    if (d.range) { d.range.dispatchEvent(new Event('change', { bubbles: true })); return; }
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY) || d.t;
+    if (target.closest && target.closest('.lay-canvas')) return;   // layout uses pointer events itself
+    setTimeout(() => {
+      if (clicked) return;
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName) && target.type !== 'checkbox' && target.type !== 'button') target.focus();
+      else target.click();
+    }, 60);
+  }, true);
+})();
