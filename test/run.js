@@ -430,6 +430,11 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     assert.strictEqual(sent[0].host, '239.255.0.1', 'shows saved before routing existed still send as before');
   });
 
+  await t('layout fixture dots can receive pointer events', async () => {
+    const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'renderer', 'style.css'), 'utf8');
+    assert.ok(/\.lay-fx\s*\{[^}]*pointer-events:\s*auto/.test(css), 'fixture dots must be grabbable above the (pointer-events:none) fixture layer');
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();
