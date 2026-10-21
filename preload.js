@@ -10,5 +10,7 @@ contextBridge.exposeInMainWorld('desk', {
   wifiSettings: () => ipcRenderer.invoke('wifi:settings'),
   bleSelect: (id) => ipcRenderer.send('ble:select', id),
   onBleDevices: (cb) => ipcRenderer.on('ble:devices', (_e, list) => cb(list)),
+  remoteInfo: () => ipcRenderer.invoke('remote:info'),
+  remoteSet: (o) => ipcRenderer.invoke('remote:set', o),
   onLive: (cb) => ipcRenderer.on('live', (_e, l) => cb(l)),
 });

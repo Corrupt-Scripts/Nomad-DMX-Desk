@@ -122,6 +122,7 @@
         el('button', { class: chView ? 'on' : '', onclick: () => { ui.deskView = 'channels'; renderView(true); } }, 'Channels')),
       chView ? el('select', { onchange: (e) => call('setUniverse', parseInt(e.target.value, 10)), value: String(show.currentUniverse) },
         Array.from({ length: show.settings.universes }, (_, i) => el('option', { value: String(i + 1) }, `Universe ${i + 1}`))) : null,
+      el('button', { class: ui.multi ? 'primary' : '', title: 'Tap several fixtures to select them together (for touch screens)', onclick: () => { ui.multi = !ui.multi; renderView(true); } }, ui.multi ? 'Multi ✓' : 'Multi'),
       el('span', { class: 'grow' }),
       el('span', { class: 'pill' }, selectionText()));
 
@@ -161,7 +162,7 @@
     if (e.shiftKey && ui.anchor != null) {
       const [a, b] = [Math.min(ui.anchor, idx), Math.max(ui.anchor, idx)];
       ids = Array.from(new Set(ids.concat(list.slice(a, b + 1).map((x) => x.id))));
-    } else if (e.ctrlKey || e.metaKey) {
+    } else if (e.ctrlKey || e.metaKey || ui.multi) {
       ids = ids.includes(f.id) ? ids.filter((x) => x !== f.id) : ids.concat(f.id);
       ui.anchor = idx;
     } else {
@@ -177,7 +178,7 @@
     if (e.shiftKey && ui.anchor != null) {
       const [a, b] = [Math.min(ui.anchor, ch), Math.max(ui.anchor, ch)];
       for (let c = a; c <= b; c++) if (!chans.includes(c)) chans.push(c);
-    } else if (e.ctrlKey || e.metaKey) {
+    } else if (e.ctrlKey || e.metaKey || ui.multi) {
       chans = chans.includes(ch) ? chans.filter((x) => x !== ch) : chans.concat(ch);
       ui.anchor = ch;
     } else {
@@ -574,9 +575,37 @@
       el('div', { class: 'hint', style: 'margin-top:14px' }, 'Show files: File menu → Save as… / Open…. The current show also auto-saves and reopens next launch.')];
   }
 
+  function remoteCard() {
+    const st = { info: null, msg: '' };
+    const card = el('div', { class: 'panel' });
+    const draw = () => {
+      const i = st.info;
+      if (!i) { card.replaceChildren(el('h3', {}, 'iPad / phone remote'), el('div', { class: 'hint' }, 'Loading…')); return; }
+      const url = i.addresses.length ? `http://${i.addresses[0]}:${i.port}` : '';
+      card.replaceChildren(...[el('h3', {}, 'iPad / phone remote', el('span', { class: 'grow' }), el('span', { class: `pill${i.running ? ' ok' : ''}` }, i.running ? `on · ${i.clients} connected` : 'off')),
+        el('div', { class: 'hint', style: 'margin-bottom:8px' }, 'Control this desk from an iPad, phone or any browser on the same Wi-Fi. This computer keeps sending the DMX, so leave it running.'),
+        el('div', { class: 'row' }, el('button', { class: i.running ? '' : 'primary', onclick: async () => { const r = await window.desk.remoteSet({ enabled: !i.running }); st.msg = r && !r.ok ? r.message : ''; await load(); } }, i.running ? 'Turn off' : 'Turn on')),
+        i.running ? el('div', { class: 'stack', style: 'margin-top:10px;gap:8px' },
+          el('div', {}, 'On the iPad, open Safari and go to:'),
+          ...i.addresses.map((a) => el('div', { style: 'font:16px ui-monospace,Consolas,monospace;color:var(--accent2)' }, `http://${a}:${i.port}`)),
+          el('div', {}, 'PIN: ', el('b', { style: 'font:18px ui-monospace,Consolas,monospace;letter-spacing:.2em' }, i.pin), ' ', el('button', { onclick: async () => { await window.desk.remoteSet({ newPin: true, enabled: true }); await load(); } }, 'New PIN')),
+          el('div', { class: 'hint' }, 'Tip: in Safari tap Share, then Add to Home Screen, to open it full screen like an app. Anyone on your network with the PIN can control the lights, and the connection is not encrypted, so use it on your own network.'),
+          !url ? el('div', { class: 'hint' }, 'No network address found. Join a Wi-Fi network first.') : null) : null,
+        st.msg ? el('div', { class: 'err-text', style: 'margin-top:8px' }, st.msg) : null].filter(Boolean));
+    };
+    const load = async () => { st.info = await window.desk.remoteInfo(); draw(); };
+    draw(); load();
+    return card;
+  }
+
   function renderOutput() {
+    if (window.desk.remote) {
+      $('#view').replaceChildren(el('div', { class: 'panel', style: 'max-width:780px' }, el('h3', {}, 'Output'),
+        el('div', { class: 'hint' }, 'You are controlling the desk remotely. Network and Bluetooth output are set up on the computer running Nomad DMX Desk.')));
+      return;
+    }
     $('#view').replaceChildren(el('div', { class: 'stack', style: 'max-width:780px' },
-      mountCard('net', netCard), mountCard('wifi', wifiCard), mountCard('ble', bleCard), mountCard('adv', advCard)));
+      mountCard('net', netCard), mountCard('wifi', wifiCard), mountCard('ble', bleCard), remoteCard(), mountCard('adv', advCard)));
     if (net.nodes == null && !net.scanning) scanNodes();
     if (wifi.list == null && !wifi.scanning) scanWifi();
   }

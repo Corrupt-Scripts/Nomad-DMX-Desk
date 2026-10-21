@@ -321,6 +321,53 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     assert.ok(back.profile(ap.id));
   });
 
+  await t('remote (iPad) server: PIN, API, blocked methods, live stream', async () => {
+    const http = require('http');
+    const path = require('path');
+    const { createRemote } = require('../engine/remote');
+    const e = new Engine();
+    const allowed = new Set(['getShow', 'getLibrary', 'execute', 'updateSettings', 'setLevel']);
+    const r = createRemote({ engine: e, allowed, rendererDir: path.join(__dirname, '..', 'renderer') });
+    const port = 18000 + Math.floor(Math.random() * 1000);
+    assert.ok((await r.start({ pin: '123456', port })).ok);
+    const req = (method, p, body, cookie, ctype) => new Promise((resolve, reject) => {
+      const q = http.request({ host: '127.0.0.1', port, method, path: p, headers: Object.assign({}, cookie ? { Cookie: cookie } : {}, body ? { 'Content-Type': ctype || 'application/json' } : {}) }, (res) => {
+        let d = ''; res.on('data', (c) => { d += c; }); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: d }));
+      });
+      q.on('error', reject); if (body) q.write(body); q.end();
+    });
+    try {
+      assert.strictEqual((await req('POST', '/api', JSON.stringify({ method: 'getShow', args: [] }))).status, 401);
+      assert.strictEqual((await req('POST', '/login', 'pin=000000', null, 'application/x-www-form-urlencoded')).status, 401);
+      const ok = await req('POST', '/login', 'pin=123456', null, 'application/x-www-form-urlencoded');
+      assert.strictEqual(ok.status, 303);
+      const cookie = ok.headers['set-cookie'][0].split(';')[0];
+      const page = await req('GET', '/', null, cookie);
+      assert.ok(page.body.includes('remote-shim.js'));
+      assert.strictEqual((await req('GET', '/../package.json', null, cookie)).status, 404);
+      assert.strictEqual((await req('GET', '/%2e%2e/package.json', null, cookie)).status, 404);
+      const show = JSON.parse((await req('POST', '/api', JSON.stringify({ method: 'getShow', args: [] }), cookie)).body);
+      assert.ok(Array.isArray(show.patch));
+      const lib = JSON.parse((await req('POST', '/api', JSON.stringify({ method: 'getLibrary', args: [] }), cookie)).body);
+      assert.ok(lib.effects.length >= 100 && lib.profiles.length >= 1000);
+      const blocked = JSON.parse((await req('POST', '/api', JSON.stringify({ method: 'updateSettings', args: [{ artnetDest: '1.2.3.4' }] }), cookie)).body);
+      assert.strictEqual(blocked.ok, false); assert.notStrictEqual(e.settings.artnetDest, '1.2.3.4');
+      const unknown = JSON.parse((await req('POST', '/api', JSON.stringify({ method: 'shutdown', args: [] }), cookie)).body);
+      assert.strictEqual(unknown.ok, false);
+      const ex = JSON.parse((await req('POST', '/api', JSON.stringify({ method: 'execute', args: ['1 @ 50'] }), cookie)).body);
+      assert.ok(ex && typeof ex === 'object');
+      // live stream
+      const got = await new Promise((resolve, reject) => {
+        const q = http.request({ host: '127.0.0.1', port, path: '/events', headers: { Cookie: cookie } }, (res) => {
+          let d = '';
+          res.on('data', (c) => { d += c; if (d.includes('event: show')) { resolve(d); q.destroy(); } });
+        });
+        q.on('error', () => {}); q.end(); setTimeout(() => reject(new Error('no SSE')), 3000);
+      });
+      assert.ok(got.includes('event: show'));
+    } finally { r.stop(); }
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();

@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { Engine } = require('./engine/engine');
 const discovery = require('./engine/discovery');
+const { createRemote } = require('./engine/remote');
+const crypto = require('crypto');
 
 const engine = new Engine();
 let win = null;
@@ -12,6 +14,15 @@ let saveTimer = null;
 let filePath = null; // current show file, if any
 let bleCallback = null; // pending Bluetooth chooser callback
 
+let remote = null;
+const remoteCfgPath = () => path.join(app.getPath('userData'), 'remote.json');
+let remoteCfg = { enabled: false, pin: '', port: 8090 };
+const loadRemoteCfg = () => {
+  try { Object.assign(remoteCfg, JSON.parse(fs.readFileSync(remoteCfgPath(), 'utf8'))); } catch (e) { /* defaults */ }
+  if (!/^\d{6}$/.test(String(remoteCfg.pin))) remoteCfg.pin = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  remoteCfg.port = Math.min(65535, Math.max(1024, parseInt(remoteCfg.port, 10) || 8090));
+};
+const saveRemoteCfg = () => { try { fs.writeFileSync(remoteCfgPath(), JSON.stringify(remoteCfg)); } catch (e) { /* ignore */ } };
 const autosavePath = () => path.join(app.getPath('userData'), 'autosave.nomaddmx');
 
 const ALLOWED = new Set([
@@ -21,9 +32,13 @@ const ALLOWED = new Set([
   'addFixtures', 'updateFixture', 'removeFixture', 'saveProfile', 'deleteProfile', 'updateSettings',
 ]);
 
+remote = createRemote({ engine, allowed: ALLOWED, rendererDir: path.join(__dirname, 'renderer') });
+
 function sendShow() {
   showTimer = null;
-  if (win && !win.isDestroyed()) win.webContents.send('show', engine.getShow());
+  const snap = engine.getShow();
+  remote.sendShow(snap);
+  if (win && !win.isDestroyed()) win.webContents.send('show', snap);
   if (win && !win.isDestroyed()) win.setTitle(`${engine.showName} – Nomad DMX Desk`);
 }
 
@@ -58,6 +73,17 @@ ipcMain.handle('wifi:connect', (_e, ssid, password) => discovery.wifiConnect(ssi
 ipcMain.handle('wifi:settings', () => {
   const url = process.platform === 'win32' ? 'ms-settings:network-wifi' : process.platform === 'darwin' ? 'x-apple.systempreferences:com.apple.wifi-settings-extension' : null;
   if (url) shell.openExternal(url);
+});
+ipcMain.handle('remote:info', () => Object.assign(remote.info(), { enabled: remoteCfg.enabled, pin: remoteCfg.pin, port: remoteCfg.port }));
+ipcMain.handle('remote:set', async (_e, o) => {
+  o = o || {};
+  if (o.newPin) remoteCfg.pin = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  if (o.port != null) remoteCfg.port = Math.min(65535, Math.max(1024, parseInt(o.port, 10) || 8090));
+  if (o.enabled != null) remoteCfg.enabled = !!o.enabled;
+  saveRemoteCfg();
+  if (remoteCfg.enabled) { const r = await remote.start({ pin: remoteCfg.pin, port: remoteCfg.port }); if (!r.ok) { remoteCfg.enabled = false; saveRemoteCfg(); } return r; }
+  remote.stop();
+  return { ok: true };
 });
 ipcMain.on('ble:select', (_e, id) => {
   if (!bleCallback) return;
@@ -140,14 +166,19 @@ app.whenReady().then(() => {
   createWindow();
   engine.start();
   // Push live levels to the UI at ~15 Hz (independent of the DMX rate)
+  loadRemoteCfg();
+  if (remoteCfg.enabled) remote.start({ pin: remoteCfg.pin, port: remoteCfg.port }).then((r) => { if (!r.ok) { remoteCfg.enabled = false; } });
   liveTimer = setInterval(() => {
-    if (win && !win.isDestroyed()) win.webContents.send('live', { out: engine.lastFrame, status: engine.getStatus() });
+    const status = engine.getStatus();
+    if (win && !win.isDestroyed()) win.webContents.send('live', { out: engine.lastFrame, status });
+    if (remote.clients) remote.sendLive({ out: engine.lastFrame.map((u) => Array.from(u)), status });
   }, 66);
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 
 app.on('window-all-closed', () => {
   clearInterval(liveTimer);
+  remote.stop();
   try { fs.writeFileSync(autosavePath(), JSON.stringify(engine.serialize())); } catch (e) { /* ignore */ }
   engine.shutdown();
   app.quit();
