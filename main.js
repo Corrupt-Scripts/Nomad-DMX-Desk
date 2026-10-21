@@ -15,7 +15,7 @@ let bleCallback = null; // pending Bluetooth chooser callback
 const autosavePath = () => path.join(app.getPath('userData'), 'autosave.nomaddmx');
 
 const ALLOWED = new Set([
-  'getShow', 'execute', 'setUniverse', 'setSelection', 'setLevel', 'setColour', 'setParam', 'setChannel',
+  'getShow', 'getLibrary', 'execute', 'setUniverse', 'setSelection', 'setLevel', 'setColour', 'setParam', 'setChannel',
   'clearProgrammer', 'clearAll', 'setMaster', 'setBlackout', 'go', 'back', 'goto', 'stop', 'release',
   'recordCue', 'updateCue', 'deleteCue', 'goIndex', 'addEffect', 'updateEffect', 'removeEffect',
   'addFixtures', 'updateFixture', 'removeFixture', 'saveProfile', 'deleteProfile', 'updateSettings',
@@ -43,6 +43,7 @@ ipcMain.handle('api', (_e, method, args) => {
   if (!ALLOWED.has(method)) throw new Error(`Unknown method ${method}`);
   if (method === 'execute') return engine.execute(...args);
   if (method === 'getShow') return engine.getShow();
+  if (method === 'getLibrary') return engine.getLibrary();
   try {
     return { ok: true, result: engine[method](...(args || [])) };
   } catch (e) {

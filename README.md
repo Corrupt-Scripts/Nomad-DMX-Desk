@@ -11,7 +11,8 @@ Original software by Corrupt Scripts. Not affiliated with any other lighting con
 - Fixture tiles with live colour preview, colour picker, per-channel sliders (white, warm, cool, amber, UV, pan, tilt …)
 - Raw channel view (512 channels per universe, up to 16 universes)
 - Cue list with fade times: `record cue 3 time 2 label Walk in`, `go`, `back`, `goto 3`
-- Effects on selected fixtures: sine, pulse, strobe, chase, rainbow
+- 186 effects on selected fixtures, searchable by category: basic waveforms, chases, colour effects, and film effects (fire, candle, lightning, TV, police, paparazzi, faulty bulbs, explosions, sunrise and many more). Colour effects work on RGB, CCT or bi-colour fixtures.
+- 1,090 film and studio fixture modes (Aputure, ARRI, Astera, Kino Flo, Lupo, Chroma-Q, LiteGear and more) from the Open Fixture Library, searchable in the Patch tab. See THIRD_PARTY_NOTICES.md.
 - Grand master + blackout, Art-Net / sACN / both, unicast or broadcast / multicast
 - Save/open show files (`.nomaddmx`), auto-saves and restores last show
 

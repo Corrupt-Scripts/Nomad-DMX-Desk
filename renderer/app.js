@@ -37,6 +37,9 @@
 
   // -------------------------------------------------------------------- state
   let show = null;
+  let lib = { profiles: [], effects: [], categories: [] };
+  const fxUi = { cat: 'All', q: '' };
+  const patchUi = { man: 'All', q: '' };
   let live = { out: [], status: { packets: 0, lastError: '', current: -1, fading: false, programmer: [] } };
   const ui = { tab: 'desk', deskView: 'fixtures', anchor: null, pending: false, profileEdit: null, cells: [], tiles: new Map(), intensity: null, recNum: null };
 
@@ -209,11 +212,13 @@
         el('div', { class: 'swatches' }, SWATCHES.map(([n, c]) => el('button', { title: n, style: `background:${c}`, onclick: () => call('setColour', ...hexToRgb(c)) }))));
     }
 
-    ['white', 'warm', 'cool', 'amber', 'uv', 'pan', 'tilt', 'other'].filter((t) => types.has(t)).forEach((t) => {
-      const val = el('span', { class: 'val' }, '–');
+    const kRange = (() => { for (const f of fixtures) { const p = profileOf(f); const c = p && p.channels.find((x) => x.type === 'cct' && x.range); if (c) return c.range; } return null; })();
+    ['white', 'warm', 'cool', 'amber', 'uv', 'cct', 'tint', 'pan', 'tilt', 'other'].filter((t) => types.has(t)).forEach((t) => {
+      const kel = (v) => (t === 'cct' && kRange ? `${Math.round(kRange[0] + (kRange[1] - kRange[0]) * v / 255)}K` : String(v));
+      const val = el('span', { class: 'val', style: t === 'cct' && kRange ? 'width:52px' : '' }, '–');
       const r = el('input', { type: 'range', min: 0, max: 255, value: 0 });
-      r.addEventListener('input', throttle(() => { val.textContent = r.value; call('setParam', t, parseInt(r.value, 10)); }, 30));
-      rows.push(el('div', { class: 'row' }, el('label', {}, t[0].toUpperCase() + t.slice(1)), r, val));
+      r.addEventListener('input', throttle(() => { val.textContent = kel(parseInt(r.value, 10)); call('setParam', t, parseInt(r.value, 10)); }, 30));
+      rows.push(el('div', { class: 'row' }, el('label', {}, t === 'cct' ? 'Colour temp' : t === 'tint' ? 'Tint' : t[0].toUpperCase() + t.slice(1)), r, val));
     });
 
     if (!has) rows.push(el('div', { class: 'hint' }, 'Select fixtures or channels, or type on the command line below.'));
@@ -260,17 +265,48 @@
         ? el('table', {}, el('thead', {}, el('tr', {}, ['#', 'Name', 'Profile', 'Univ', 'Addr', 'Size', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows))
         : el('div', { class: 'hint' }, 'Nothing patched. Use the form on the right.'));
 
-    const profSel = el('select', { value: show.profiles[0].id }, show.profiles.map((p) => el('option', { value: p.id }, p.name)));
+    const mans = ['All', 'Generic & my profiles'].concat(Array.from(new Set(lib.profiles.map((x) => x.m))).sort((a, b) => a.localeCompare(b)));
+    const manSel = el('select', { value: patchUi.man }, mans.map((m) => el('option', { value: m }, m)));
+    const search = el('input', { type: 'text', placeholder: 'search e.g. 600x, skypanel, tube', value: patchUi.q });
+    const profSel = el('select', { size: 8, style: 'width:100%' });
+    const info = el('div', { class: 'hint' });
+    const fill = () => {
+      patchUi.man = manSel.value; patchUi.q = search.value;
+      const q = search.value.trim().toLowerCase();
+      const items = [];
+      if (patchUi.man === 'All' || patchUi.man === 'Generic & my profiles') {
+        for (const p of show.profiles) if (!p.library) items.push({ id: p.id, label: `${p.name} (${p.channels.length}ch)`, hay: p.name.toLowerCase() });
+      }
+      if (patchUi.man !== 'Generic & my profiles') {
+        for (const p of lib.profiles) {
+          if (patchUi.man !== 'All' && p.m !== patchUi.man) continue;
+          const label = `${p.m} ${p.f} - ${p.mode} (${p.n}ch)`;
+          items.push({ id: p.id, label, hay: label.toLowerCase() });
+        }
+      }
+      const words = q.split(/\s+/).filter(Boolean);
+      const hits = items.filter((it) => words.every((w) => it.hay.includes(w)));
+      const shown = hits.slice(0, 400);
+      const keep = profSel.value;
+      profSel.replaceChildren(...shown.map((it) => el('option', { value: it.id }, it.label)));
+      if (shown.some((it) => it.id === keep)) profSel.value = keep; else if (shown.length) profSel.selectedIndex = 0;
+      info.textContent = `${hits.length} match${hits.length === 1 ? '' : 'es'}${hits.length > shown.length ? ` (showing first ${shown.length}, keep typing to narrow)` : ''}`;
+    };
+    manSel.addEventListener('change', fill);
+    search.addEventListener('input', fill);
     const count = el('input', { type: 'number', min: 1, max: 256, value: 1 });
     const uni = el('input', { type: 'number', min: 1, max: 16, value: show.currentUniverse });
     const addr = el('input', { type: 'number', min: 1, max: 512, value: 1 });
     const name = el('input', { type: 'text', placeholder: '(profile name)' });
     const add = el('div', { class: 'panel' }, el('h3', {}, 'Add fixtures'),
       el('div', { class: 'form' },
-        el('label', {}, 'Profile'), profSel, el('label', {}, 'Quantity'), count,
+        el('label', {}, 'Maker'), manSel, el('label', {}, 'Search'), search,
+        el('label', {}, 'Fixture / mode'), profSel, el('span'), info,
+        el('label', {}, 'Quantity'), count,
         el('label', {}, 'Universe'), uni, el('label', {}, 'Start address'), addr, el('label', {}, 'Name'), name,
-        el('span'), el('button', { class: 'primary', onclick: () => call('addFixtures', { profileId: profSel.value, count: count.value, universe: uni.value, address: addr.value, name: name.value }) }, 'Patch')),
-      el('div', { class: 'hint', style: 'margin-top:8px' }, 'Quantity > 1 patches them back to back, rolling to the next universe when one fills.'));
+        el('span'), el('button', { class: 'primary', onclick: () => { if (profSel.value) call('addFixtures', { profileId: profSel.value, count: count.value, universe: uni.value, address: addr.value, name: name.value }); } }, 'Patch')),
+      el('div', { class: 'hint', style: 'margin-top:8px' }, `Quantity > 1 patches them back to back, rolling to the next universe when one fills. ${lib.profiles.length} film & studio fixture modes included (Open Fixture Library).`));
+    fill();
 
     $('#view').replaceChildren(el('div', { class: 'cols2' }, table, el('div', { class: 'stack' }, add, renderProfiles())));
   }
@@ -292,7 +328,7 @@
           el('button', { class: 'primary', onclick: async () => { const r = await call('saveProfile', { id: pe.id, name: pe.name, channels: pe.channels }); if (r.ok) { ui.profileEdit = null; renderView(true); } } }, 'Save'),
           el('button', { onclick: () => { ui.profileEdit = null; renderView(true); } }, 'Cancel')));
     }
-    const rows = show.profiles.map((p) => el('tr', {},
+    const rows = show.profiles.filter((p) => !p.library).map((p) => el('tr', {},
       el('td', {}, p.name, p.builtin ? el('span', { class: 'pill', style: 'margin-left:6px' }, 'built-in') : null),
       el('td', {}, `${p.channels.length} ch`),
       el('td', { style: 'white-space:nowrap' },
@@ -322,26 +358,61 @@
   }
 
   // ----------------------------------------------------------------- effects
-  function renderEffects() {
-    const typeSel = el('select', { value: 'sine' }, [['sine', 'Sine fade'], ['pulse', 'Pulse (on/off)'], ['strobe', 'Strobe'], ['chase', 'Chase'], ['rainbow', 'Rainbow (RGB)']].map(([v, n]) => el('option', { value: v }, n)));
-    const rate = el('input', { type: 'number', step: 0.1, min: 0.05, max: 25, value: 1, style: 'width:70px' });
-    const add = el('div', { class: 'panel' }, el('h3', {}, 'Add effect to current selection'),
-      el('div', { class: 'row' }, typeSel, el('label', { style: 'width:auto' }, 'Rate Hz'), rate,
-        el('button', { class: 'primary', onclick: () => call('addEffect', { type: typeSel.value, rate: parseFloat(rate.value) || 1 }) }, 'Add')),
-      el('div', { class: 'hint', style: 'margin-top:8px' }, `Selection: ${selectionText()}. Effects ride on top of cues and the programmer, and are not recorded into cues.`));
+  function fxGroups(selectedId) {
+    const q = fxUi.q.trim().toLowerCase();
+    const groups = new Map();
+    for (const e of lib.effects) {
+      if (fxUi.cat !== 'All' && e.cat !== fxUi.cat) continue;
+      if (q && !(e.name + ' ' + e.cat).toLowerCase().includes(q) && e.id !== selectedId) continue;
+      if (!groups.has(e.cat)) groups.set(e.cat, []);
+      groups.get(e.cat).push(e);
+    }
+    return groups;
+  }
+  const fxName = (id) => { const e = lib.effects.find((x) => x.id === id); return e ? e.name : id; };
 
-    const rows = show.effects.map((e) => el('tr', {},
-      el('td', {}, el('input', { type: 'checkbox', checked: e.on, onchange: (ev) => call('updateEffect', e.id, { on: ev.target.checked }) })),
-      el('td', {}, el('select', { value: e.type, onchange: (ev) => call('updateEffect', e.id, { type: ev.target.value }) }, ['sine', 'pulse', 'strobe', 'chase', 'rainbow'].map((t) => el('option', { value: t }, t)))),
-      el('td', {}, el('input', { class: 'n', type: 'number', step: 0.1, value: e.rate, onchange: (ev) => call('updateEffect', e.id, { rate: ev.target.value }) })),
-      el('td', {}, el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: e.depth, onchange: (ev) => call('updateEffect', e.id, { depth: ev.target.value }) })),
-      el('td', {}, el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: e.spread, onchange: (ev) => call('updateEffect', e.id, { spread: ev.target.value }) })),
-      el('td', {}, `${e.fixtureIds.length} fix`, ' ', el('button', { onclick: () => call('updateEffect', e.id, { useSelection: true }) }, 'Use selection')),
-      el('td', {}, el('button', { class: 'danger', onclick: () => call('removeEffect', e.id) }, '✕'))));
+  function renderEffects() {
+    const catSel = el('select', { value: fxUi.cat }, ['All'].concat(lib.categories).map((c) => el('option', { value: c }, c)));
+    const search = el('input', { type: 'text', placeholder: `search ${lib.effects.length} effects: fire, police, lightning…`, value: fxUi.q, style: 'flex:1' });
+    const list = el('select', { size: 12, style: 'width:100%' });
+    const info = el('span', { class: 'hint' });
+    const rate = el('input', { type: 'number', step: 0.1, min: 0.02, max: 25, value: 1, style: 'width:70px' });
+    const fill = () => {
+      fxUi.cat = catSel.value; fxUi.q = search.value;
+      const keep = list.value;
+      const groups = fxGroups();
+      let total = 0;
+      list.replaceChildren(...Array.from(groups.entries()).map(([cat, items]) => { total += items.length; return el('optgroup', { label: cat }, items.map((e) => el('option', { value: e.id }, e.name))); }));
+      if (keep && list.querySelector(`option[value="${keep}"]`)) list.value = keep; else if (total) list.selectedIndex = 0;
+      info.textContent = `${total} effect${total === 1 ? '' : 's'}`;
+    };
+    catSel.addEventListener('change', fill);
+    search.addEventListener('input', fill);
+    const doAdd = () => { if (list.value) call('addEffect', { type: list.value, rate: parseFloat(rate.value) || 1 }); };
+    list.addEventListener('dblclick', doAdd);
+    const add = el('div', { class: 'panel' }, el('h3', {}, 'Add effect to current selection', el('span', { class: 'grow' }), info),
+      el('div', { class: 'row' }, catSel, search),
+      list,
+      el('div', { class: 'row', style: 'margin-top:8px' }, el('label', { style: 'width:auto' }, 'Rate Hz'), rate,
+        el('button', { class: 'primary', onclick: doAdd }, 'Add effect')),
+      el('div', { class: 'hint', style: 'margin-top:8px' }, `Selection: ${selectionText()}. Double-click an effect to add it. Effects ride on top of cues and the programmer, and are not recorded into cues. Film effects work on any fixture: colour ones use RGB, CCT or bi-colour channels, whichever the fixture has.`));
+    fill();
+
+    const rows = show.effects.map((e) => {
+      return el('tr', {},
+        el('td', {}, el('input', { type: 'checkbox', checked: e.on, onchange: (ev) => call('updateEffect', e.id, { on: ev.target.checked }) })),
+        el('td', {}, el('select', { value: e.type, onchange: (ev) => call('updateEffect', e.id, { type: ev.target.value }) },
+          lib.categories.map((cat) => el('optgroup', { label: cat }, lib.effects.filter((x) => x.cat === cat).map((x) => el('option', { value: x.id }, x.name)))))),
+        el('td', {}, el('input', { class: 'n', type: 'number', step: 0.1, value: e.rate, onchange: (ev) => call('updateEffect', e.id, { rate: ev.target.value }) })),
+        el('td', {}, el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: e.depth, onchange: (ev) => call('updateEffect', e.id, { depth: ev.target.value }) })),
+        el('td', {}, el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: e.spread, onchange: (ev) => call('updateEffect', e.id, { spread: ev.target.value }) })),
+        el('td', {}, `${e.fixtureIds.length} fix`, ' ', el('button', { onclick: () => call('updateEffect', e.id, { useSelection: true }) }, 'Use selection')),
+        el('td', {}, el('button', { class: 'danger', onclick: () => call('removeEffect', e.id) }, '✕')));
+    });
 
     $('#view').replaceChildren(el('div', { class: 'stack' }, add, el('div', { class: 'panel' }, el('h3', {}, 'Running effects'),
       show.effects.length
-        ? el('table', {}, el('thead', {}, el('tr', {}, ['On', 'Type', 'Rate Hz', 'Depth', 'Spread', 'Fixtures', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows))
+        ? el('table', {}, el('thead', {}, el('tr', {}, ['On', 'Effect', 'Rate Hz', 'Depth', 'Spread', 'Fixtures', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows))
         : el('div', { class: 'hint' }, 'No effects. Select fixtures on the Desk, then add one here.'))));
   }
 
@@ -544,7 +615,7 @@
     const p = profileOf(f);
     const u = out[f.universe - 1];
     if (!p || !u) return '#000';
-    let r = 0; let g = 0; let b = 0; let dim = null; let any = false;
+    let r = 0; let g = 0; let b = 0; let dim = null; let any = false; let cct = null;
     p.channels.forEach((c, i) => {
       const ch = f.address - 1 + i;
       if (ch < 0 || ch > 511) return;
@@ -559,11 +630,12 @@
         case 'cool': r += v * 0.8; g += v * 0.9; b += v; any = true; break;
         case 'amber': r += v; g += v * 0.75; any = true; break;
         case 'uv': r += v * 0.4; b += v * 0.9; any = true; break;
+        case 'cct': cct = v; break;
         default:
       }
     });
-    if (!any && dim == null) return '#000';
-    if (!any) { r = 1; g = 1; b = 1; }
+    if (!any && dim == null && cct == null) return '#000';
+    if (!any) { if (cct != null) { r = 1 - 0.22 * cct; g = 0.58 + 0.3 * cct; b = 0.2 + 0.8 * cct; } else { r = 1; g = 1; b = 1; } }
     const k = dim == null ? 1 : dim;
     const c8 = (x) => Math.round(Math.min(1, x) * k * 255);
     return `rgb(${c8(r)},${c8(g)},${c8(b)})`;
@@ -672,6 +744,7 @@
     });
     if (window.BLE) window.BLE.onChange = () => { refreshCard('ble'); updateLive(); };
     show = await window.desk.api('getShow');
+    try { lib = await window.desk.api('getLibrary'); } catch (e) { /* library optional */ }
     renderTabs(); renderCueBar(); renderMaster(); renderView(true);
   }
 

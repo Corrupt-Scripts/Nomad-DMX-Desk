@@ -253,6 +253,74 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     e.updateSettings({ bleFormat: 'junk' }); assert.strictEqual(e.settings.bleFormat, 'PLAIN');
   });
 
+  await t('effects library: 100+ distinct, finite effects', () => {
+    const fxlib = require('../engine/fxlib');
+    assert.ok(fxlib.FX.length >= 100, `only ${fxlib.FX.length}`);
+    assert.strictEqual(new Set(fxlib.FX.map((e) => e.id)).size, fxlib.FX.length);
+    assert.ok(fxlib.categories().some((c) => /^Film/.test(c)));
+    for (const id of ['sine', 'pulse', 'strobe', 'chase', 'rainbow']) assert.ok(fxlib.get(id), id);
+    const sigs = new Map();
+    for (const e of fxlib.FX) {
+      let sig = '';
+      for (const n of [1, 6]) for (let k = 0; k < 160; k++) for (let i = 0; i < n; i++) {
+        let r = e.fn({ t: k * 0.173, o: i / n, i, n, p: n > 1 ? i / (n - 1) : 0.5, s: i * 7 + 1 });
+        if (typeof r === 'number') r = { a: r };
+        const vals = [r.a == null ? 1 : r.a].concat(r.c || [0, 0, 0], [r.k == null ? -1 : r.k]);
+        for (const v of vals) assert.ok(Number.isFinite(v), `${e.id} gave ${v}`);
+        sig += vals.map((v) => v.toFixed(2)).join(',') + ';';
+      }
+      assert.ok(!sigs.has(sig), `${e.id} behaves exactly like ${sigs.get(sig)}`);
+      sigs.set(sig, e.id);
+    }
+  });
+
+  await t('every effect drives RGB, CCT, bi-colour and dimmer-only fixtures safely', () => {
+    const fxlib = require('../engine/fxlib');
+    const e = new Engine();
+    e.addFixtures({ profileId: 'b-drgb', count: 1, universe: 1, address: 1 });
+    e.addFixtures({ profileId: 'b-cct', count: 1, universe: 1, address: 11 });
+    e.addFixtures({ profileId: 'b-bicolour', count: 1, universe: 1, address: 21 });
+    e.addFixtures({ profileId: 'b-dimmer', count: 1, universe: 1, address: 31 });
+    e.addFixtures({ profileId: 'b-rgb', count: 1, universe: 1, address: 41 });
+    e.selection = { mode: 'fix', ids: e.patch.map((f) => f.id), universe: 1, channels: [] };
+    const now = Date.now();
+    for (const d of fxlib.FX) {
+      e.effects = []; e.addEffect({ type: d.id, rate: 2 });
+      for (let k = 0; k < 20; k++) {
+        const out = e.computeFrame(now + k * 170);
+        const u = out[0];
+        for (let c = 0; c < 45; c++) assert.ok(u[c] >= 0 && u[c] <= 255 && Number.isInteger(u[c]), `${d.id} ch ${c} = ${u[c]}`);
+      }
+    }
+    // a film effect should actually change a CCT fixture's colour temperature channel and not touch an unpatched one
+    e.effects = []; e.addEffect({ type: 'campfire' });
+    const o = e.computeFrame(now + 1000)[0];
+    assert.ok(o[10] > 0 && o[11] < 100, 'campfire should be warm (low CCT) and lit');
+    assert.strictEqual(o[60], 0);
+  });
+
+  await t('film fixture library is valid', () => {
+    const lib = require('../engine/library');
+    const { TYPES } = require('../engine/profiles');
+    assert.ok(lib.index.length >= 1000, `library has ${lib.index.length}`);
+    const mans = new Set(lib.index.map((x) => x.m));
+    for (const m of ['Aputure', 'ARRI', 'Astera', 'Kino Flo', 'Lupo']) assert.ok(mans.has(m), m);
+    for (const p of lib.byId.values()) {
+      assert.ok(p.channels.length >= 1 && p.channels.length <= 512, p.id);
+      for (const c of p.channels) assert.ok(TYPES.includes(c.type), `${p.id} ${c.type}`);
+    }
+    const e = new Engine();
+    const ap = lib.index.find((x) => x.m === 'Aputure');
+    e.addFixtures({ profileId: ap.id, count: 2, universe: 1, address: 1 });
+    assert.strictEqual(e.patch.length, 2);
+    assert.ok(e.getShow().profiles.some((p) => p.id === ap.id), 'patched library profile is sent to the UI');
+    assert.ok(e.getShow().profiles.length < 40, 'full library is not sent on every update');
+    assert.ok(e.getLibrary().profiles.length === lib.index.length);
+    const back = new Engine(); back.load(JSON.parse(JSON.stringify(e.serialize())));
+    assert.strictEqual(back.patch.length, 2);
+    assert.ok(back.profile(ap.id));
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();

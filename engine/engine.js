@@ -3,6 +3,8 @@ const dgram = require('dgram');
 const { artnetPacket, sacnPacket, sacnMulticastAddr } = require('./protocols');
 const { parseCommand } = require('./command');
 const { TYPES, EMITTERS, NON_INTENSITY, BUILTIN_PROFILES } = require('./profiles');
+const fxlib = require('./fxlib');
+const library = require('./library');
 
 const MAX_UNIVERSES = 16;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -86,7 +88,17 @@ class Engine {
   id(prefix) { return `${prefix}${this.nextId++}`; }
 
   allProfiles() { return BUILTIN_PROFILES.concat(this.profiles); }
-  profile(id) { return this.allProfiles().find((p) => p.id === id); }
+  profile(id) {
+    return this.profiles.find((p) => p.id === id) || BUILTIN_PROFILES.find((p) => p.id === id) || library.byId.get(id);
+  }
+  // Profiles the UI needs right now: built-ins, the user's own, and any library profile that is patched.
+  usedProfiles() {
+    const used = new Set(this.patch.map((f) => f.profileId));
+    const lib = [];
+    for (const id of used) { const p = library.byId.get(id); if (p) lib.push(p); }
+    return BUILTIN_PROFILES.concat(this.profiles, lib);
+  }
+  getLibrary() { return { profiles: library.index, effects: fxlib.list(), categories: fxlib.categories(), source: library.source }; }
   fixture(id) { return this.patch.find((f) => f.id === id); }
 
   // Channel keys occupied by a fixture, with the type of each.
@@ -130,6 +142,7 @@ class Engine {
     const channels = p.channels.map((c, i) => ({
       name: String(c.name || `Ch ${i + 1}`).slice(0, 40),
       type: TYPES.includes(c.type) ? c.type : 'other',
+      ...(Array.isArray(c.range) && c.range.length === 2 ? { range: [c.range[0] | 0, c.range[1] | 0] } : {}),
     }));
     const existing = p.id && this.profiles.find((x) => x.id === p.id);
     if (existing) { existing.name = String(p.name).slice(0, 60); existing.channels = channels; }
@@ -354,8 +367,9 @@ class Engine {
   addEffect(o) {
     const ids = o && o.fixtureIds && o.fixtureIds.length ? o.fixtureIds : this.selection.ids;
     if (!ids.length) throw new Error('Select some fixtures first');
+    const type = o && fxlib.get(o.type) ? o.type : 'sine';
     this.effects.push({
-      id: this.id('e'), type: (o && o.type) || 'sine', fixtureIds: ids.slice(), rate: (o && o.rate) || 1,
+      id: this.id('e'), type, fixtureIds: ids.slice(), rate: (o && o.rate) || 1,
       depth: o && o.depth != null ? o.depth : 1, spread: o && o.spread != null ? o.spread : 1, on: true,
     });
     this.changed();
@@ -363,8 +377,8 @@ class Engine {
   updateEffect(id, patch) {
     const e = this.effects.find((x) => x.id === id);
     if (!e) return;
-    if (patch.type != null && ['sine', 'chase', 'pulse', 'strobe', 'rainbow'].includes(patch.type)) e.type = patch.type;
-    if (patch.rate != null) e.rate = clamp(parseFloat(patch.rate) || 0.1, 0.05, 25);
+    if (patch.type != null && fxlib.get(patch.type)) e.type = patch.type;
+    if (patch.rate != null) e.rate = clamp(parseFloat(patch.rate) || 0.1, 0.02, 25);
     if (patch.depth != null) e.depth = clamp(parseFloat(patch.depth), 0, 1);
     if (patch.spread != null) e.spread = clamp(parseFloat(patch.spread), 0, 1);
     if (patch.on != null) e.on = !!patch.on;
@@ -376,36 +390,58 @@ class Engine {
   applyEffects(frame, t) {
     for (const e of this.effects) {
       if (!e.on) continue;
+      const def = fxlib.get(e.type) || fxlib.get('sine');
       const fx = e.fixtureIds.map((id) => this.fixture(id)).filter(Boolean);
       const n = fx.length;
       fx.forEach((f, i) => {
         const chans = this.fixtureChannels(f);
-        const x = t * e.rate + (n > 1 ? (i / n) * e.spread : 0);
-        const frac = x - Math.floor(x);
-        let amount;
-        switch (e.type) {
-          case 'sine': amount = 0.5 - 0.5 * Math.cos(2 * Math.PI * x); break;
-          case 'pulse': amount = frac < 0.5 ? 1 : 0; break;
-          case 'strobe': amount = frac < 0.1 ? 1 : 0; break;
-          case 'chase': { const pos = (t * e.rate) % 1; amount = Math.floor(pos * n) === i ? 1 : 0; break; }
-          default: amount = 1;
-        }
-        amount = 1 - e.depth * (1 - amount);
-        if (e.type === 'rainbow') {
-          const [r, g, b] = hsv(frac, 1, 1);
-          for (const c of chans) {
-            if (c.type === 'red') frame[c.key] = r * 255;
-            else if (c.type === 'green') frame[c.key] = g * 255;
-            else if (c.type === 'blue') frame[c.key] = b * 255;
-            else if (c.type === 'dimmer' && frame[c.key] < 1) frame[c.key] = 255;
-          }
-          return;
-        }
-        const dim = chans.filter((c) => c.type === 'dimmer');
-        const targets = dim.length ? dim : chans.filter((c) => EMITTERS.includes(c.type));
-        const anyLit = targets.some((c) => frame[c.key] > 0);
-        for (const c of targets) frame[c.key] = (anyLit ? frame[c.key] : 255) * amount;
+        let r = def.fn({ t: t * e.rate, o: n > 1 ? (i / n) * e.spread : 0, i, n, p: n > 1 ? i / (n - 1) : 0.5, s: i * 7 + 1 });
+        if (typeof r === 'number') r = { a: r };
+        this.applyEffectResult(frame, chans, r, e.depth);
       });
+    }
+  }
+
+  // Writes one effect sample onto one fixture. depth blends between untouched (0) and fully effected (1).
+  applyEffectResult(frame, chans, r, depth) {
+    const by = (type) => chans.filter((c) => c.type === type);
+    const mixTo = (c, target) => { frame[c.key] = frame[c.key] + (target - frame[c.key]) * depth; };
+    let a = r.a == null ? 1 : r.a;
+    if (!(a >= 0)) a = 0;
+    if (a > 2.5) a = 2.5;
+    let col = r.c || null;
+    let k = r.k == null ? null : clamp(r.k, 0, 1);
+    if (!col && k != null) col = fxlib.kRgb(k);
+    let colourSet = false;
+    if (col) {
+      if (k == null) k = col[0] + col[2] > 0 ? col[2] / (col[0] + col[2]) : 0.5;
+      const rgb = by('red').length || by('green').length || by('blue').length;
+      const hasDim = by('dimmer').length > 0;
+      const gain = hasDim ? 1 : clamp(a, 0, 1); // without a dimmer the colour itself carries the level
+      if (rgb) {
+        by('red').forEach((c) => mixTo(c, col[0] * 255 * gain));
+        by('green').forEach((c) => mixTo(c, col[1] * 255 * gain));
+        by('blue').forEach((c) => mixTo(c, col[2] * 255 * gain));
+        ['white', 'warm', 'cool', 'amber', 'uv'].forEach((t) => by(t).forEach((c) => mixTo(c, 0)));
+        colourSet = true;
+      } else if (by('cct').length) {
+        by('cct').forEach((c) => mixTo(c, k * 255));
+        colourSet = hasDim;
+      } else if (by('warm').length || by('cool').length) {
+        const luma = Math.max(col[0], col[1], col[2]) * 255 * gain;
+        by('warm').forEach((c) => mixTo(c, Math.min(1, 2 * (1 - k)) * luma));
+        by('cool').forEach((c) => mixTo(c, Math.min(1, 2 * k) * luma));
+        colourSet = true;
+      }
+    }
+    const aeff = 1 - depth * (1 - a);
+    const dim = by('dimmer');
+    if (dim.length) {
+      for (const c of dim) { const base = frame[c.key] > 0 ? frame[c.key] : 255; frame[c.key] = clamp(base * aeff, 0, 255); }
+    } else if (!(col && colourSet)) {
+      const em = chans.filter((c) => EMITTERS.includes(c.type));
+      const lit = em.some((c) => frame[c.key] > 0);
+      for (const c of em) frame[c.key] = clamp((lit ? frame[c.key] : 255) * aeff, 0, 255);
     }
   }
 
@@ -574,7 +610,7 @@ class Engine {
     return {
       name: this.showName,
       settings: this.settings,
-      profiles: this.allProfiles(),
+      profiles: this.usedProfiles(),
       types: TYPES,
       patch: this.patch,
       conflicts: this.conflicts(),
