@@ -122,3 +122,20 @@ td input.n { width: 72px; }
   .master input { width: 110px; }
   .bo { white-space: nowrap; }
 }
+
+/* Layout */
+.lay { display: grid; grid-template-columns: 1fr 290px; gap: 14px; height: 100%; min-height: 0; }
+.lay-stage { display: flex; align-items: center; justify-content: center; min-height: 0; overflow: auto; }
+.lay-canvas { position: relative; flex: none; border: 1px solid var(--line); border-radius: 6px; background-color: #0b0910; background-size: 100% 100%; background-repeat: no-repeat; touch-action: none; user-select: none; -webkit-user-select: none; overflow: hidden;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); }
+.lay-canvas.hasbg { background-image: none; }
+.lay-canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.lay-canvas.draw { cursor: crosshair; }
+.lay-fx { position: absolute; width: 32px; height: 32px; margin: -16px 0 0 -16px; border-radius: 50%; border: 2px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,.35); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000; cursor: grab; }
+.lay-fx.sel { box-shadow: 0 0 0 3px var(--accent2); }
+.lay-fx.bad { border-color: var(--bad); }
+.lay-handle { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 3px; background: var(--accent2); border: 2px solid #000; cursor: nwse-resize; }
+.lay-band { position: absolute; border: 1px dashed var(--accent2); background: rgba(139, 92, 246, .15); pointer-events: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips button { padding: 3px 8px; }
+@media (max-width: 900px) { .lay { grid-template-columns: 1fr; height: auto; } }

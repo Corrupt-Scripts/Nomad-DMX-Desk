@@ -368,6 +368,37 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     } finally { r.stop(); }
   });
 
+  await t('layout: positions, shapes, background image, save/load', () => {
+    const e = new Engine();
+    e.addFixtures({ profileId: 'b-rgb', count: 5, universe: 1, address: 1 });
+    e.layoutAuto();
+    assert.strictEqual(Object.keys(e.layout.pos).length, 5);
+    for (const p of Object.values(e.layout.pos)) assert.ok(p.x > 0 && p.x < 1 && p.y > 0 && p.y < 1);
+    const id0 = e.patch[0].id;
+    e.setLayoutPositions([{ id: id0, x: 2, y: -1 }, { id: 'nope', x: 0.5, y: 0.5 }]);
+    assert.deepStrictEqual(e.layout.pos[id0], { x: 1, y: 0 }); assert.ok(!e.layout.pos.nope);
+    const sid = e.addShape({ type: 'ellipse', x: 0.2, y: 0.2, w: 0.3, h: 0.2, color: '#ff0000', fill: true });
+    e.addShape({ type: 'bogus', color: 'red; background:url(x)' });
+    assert.strictEqual(e.layout.shapes[1].type, 'rect'); assert.strictEqual(e.layout.shapes[1].color, '#8b5cf6');
+    e.updateShape(sid, { x: 0.5, type: 'line', text: 'Stage' });
+    const sh = e.layout.shapes.find((x) => x.id === sid);
+    assert.strictEqual(sh.x, 0.5); assert.strictEqual(sh.type, 'ellipse'); assert.strictEqual(sh.text, 'Stage');
+    e.moveShape(sid, true); assert.strictEqual(e.layout.shapes[e.layout.shapes.length - 1].id, sid);
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    e.setLayoutImage(png, 2);
+    assert.strictEqual(e.layout.aspect, 2);
+    assert.throws(() => e.setLayoutImage('data:text/html;base64,AAAA', 1));
+    assert.throws(() => e.setLayoutImage('javascript:alert(1)', 1));
+    const show = e.getShow();
+    assert.ok(!JSON.stringify(show).includes('base64'), 'image must not travel with every show update');
+    assert.strictEqual(show.layout.hasBg, true);
+    assert.strictEqual(e.getLayoutImage().bg, png);
+    const back = new Engine(); back.load(JSON.parse(JSON.stringify(e.serialize())));
+    assert.strictEqual(back.layout.bg, png); assert.strictEqual(back.layout.shapes.length, 2); assert.strictEqual(Object.keys(back.layout.pos).length, 5);
+    e.removeFixture(id0); assert.ok(!e.layout.pos[id0]);
+    e.setLayoutImage(null); assert.strictEqual(e.getShow().layout.hasBg, false);
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();

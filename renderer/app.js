@@ -43,7 +43,7 @@
   let live = { out: [], status: { packets: 0, lastError: '', current: -1, fading: false, programmer: [] } };
   const ui = { tab: 'desk', deskView: 'fixtures', anchor: null, pending: false, profileEdit: null, cells: [], tiles: new Map(), intensity: null, recNum: null };
 
-  const TABS = [['desk', 'Desk'], ['patch', 'Patch'], ['cues', 'Cues'], ['effects', 'Effects'], ['output', 'Output']];
+  const TABS = [['desk', 'Desk'], ['layout', 'Layout'], ['patch', 'Patch'], ['cues', 'Cues'], ['effects', 'Effects'], ['output', 'Output']];
 
   async function call(method, ...args) {
     const r = await window.desk.api(method, ...args);
@@ -372,12 +372,300 @@
   }
   const fxName = (id) => { const e = lib.effects.find((x) => x.id === id); return e ? e.name : id; };
 
+  // ------------------------------------------------------------------ layout
+  // Put fixtures on a plan: a background picture (stage plan, floor plan, photo) plus drawn shapes.
+  const lay = { tool: 'select', shape: null, bgUrl: null, bgVersion: -1, colour: '#8b5cf6', fill: false, nodes: new Map(), drag: null, draft: null, active: false };
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const sv = (tag, attrs) => { const n = document.createElementNS(SVGNS, tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  const SHAPE_TOOLS = [['select', 'Select'], ['rect', 'Rectangle'], ['ellipse', 'Ellipse'], ['triangle', 'Triangle'], ['line', 'Line'], ['text', 'Text']];
+
+  async function layoutImage() {
+    const L = show.layout;
+    if (!L.hasBg) { lay.bgUrl = null; lay.bgVersion = L.bgVersion; return; }
+    if (lay.bgUrl && lay.bgVersion === L.bgVersion) return;
+    const r = await window.desk.api('getLayoutImage');
+    lay.bgUrl = r && r.result ? r.result.bg : null;
+    lay.bgVersion = L.bgVersion;
+  }
+
+  function pickImage(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1800; const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * k)); const h = Math.max(1, Math.round(img.naturalHeight * k));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+        call('setLayoutImage', c.toDataURL('image/jpeg', 0.85), w / h);
+      };
+      img.onerror = () => setFeedback('That file is not an image the desk can read', true);
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function renderLayout() {
+    lay.active = true;
+    layoutImage().then(() => { if (ui.tab === 'layout' && lay.canvasEl) paintBg(); });
+    const L = show.layout;
+    const stacked = window.innerWidth <= 900;
+    const view = $('#view');
+    const availW = Math.max(240, view.clientWidth - 28 - (stacked ? 0 : 304));
+    const availH = Math.max(220, stacked ? Math.min(window.innerHeight * 0.65, 720) : view.clientHeight - 28);
+    const w = Math.floor(Math.min(availW, availH * L.aspect));
+    const h = Math.floor(w / L.aspect);
+    const canvas = el('div', { class: 'lay-canvas', style: `width:${w}px;height:${h}px` });
+    lay.canvasEl = canvas; lay.w = w; lay.h = h;
+    const svg = sv('svg', { viewBox: `0 0 1000 ${1000 / L.aspect}`, preserveAspectRatio: 'none' });
+    const handles = el('div', { style: 'position:absolute;inset:0;pointer-events:none' });
+    const fxLayer = el('div', { style: 'position:absolute;inset:0' });
+    const band = el('div', { class: 'lay-band', style: 'display:none' });
+    canvas.append(svg, fxLayer, handles, band);
+    lay.svg = svg; lay.handles = handles; lay.band = band; lay.fxLayer = fxLayer;
+
+    paintFixtures();
+    paintShapes();
+    paintBg();
+    canvas.addEventListener('pointerdown', layDown);
+    canvas.addEventListener('pointermove', layMove);
+    canvas.addEventListener('pointerup', layUp);
+    canvas.addEventListener('pointercancel', layUp);
+
+    const side = el('div', { class: 'panel controls', id: 'laySide' });
+    lay.sideEl = side;
+    drawSide();
+    $('#view').replaceChildren(el('div', { class: 'lay' }, el('div', { class: 'lay-stage' }, canvas), side));
+    canvas.classList.toggle('draw', lay.tool !== 'select');
+    updateLive();
+  }
+
+  function paintBg() {
+    const c = lay.canvasEl; if (!c) return;
+    c.classList.toggle('hasbg', !!lay.bgUrl);
+    c.style.backgroundImage = lay.bgUrl ? `url("${lay.bgUrl}")` : '';
+  }
+
+  const shapesNow = () => show.layout.shapes.map((s) => (lay.draft && lay.draft.id === s.id ? lay.draft : s)).concat(lay.draft && lay.draft.id === '__new' ? [lay.draft] : []);
+
+  function paintShapes() {
+    const L = show.layout; const H = 1000 / L.aspect; const px = 1000 / lay.w;
+    lay.svg.replaceChildren();
+    lay.handles.replaceChildren();
+    for (const s of shapesNow()) {
+      const g = sv('g', { 'data-sid': s.id });
+      const stroke = { stroke: s.color, 'stroke-width': s.width, 'vector-effect': 'non-scaling-stroke', fill: s.fill ? s.color : 'none', 'fill-opacity': s.fill ? 0.35 : 0, 'pointer-events': s.fill ? 'all' : 'visibleStroke' };
+      let main; let hit = null;
+      const X = (v) => v * 1000; const Y = (v) => v * H;
+      if (s.type === 'rect') main = sv('rect', { x: X(s.x), y: Y(s.y), width: X(s.w), height: Y(s.h), ...stroke });
+      else if (s.type === 'ellipse') main = sv('ellipse', { cx: X(s.x + s.w / 2), cy: Y(s.y + s.h / 2), rx: X(s.w / 2), ry: Y(s.h / 2), ...stroke });
+      else if (s.type === 'triangle') main = sv('polygon', { points: `${X(s.x + s.w / 2)},${Y(s.y)} ${X(s.x + s.w)},${Y(s.y + s.h)} ${X(s.x)},${Y(s.y + s.h)}`, ...stroke });
+      else if (s.type === 'line') {
+        main = sv('line', { x1: X(s.x), y1: Y(s.y), x2: X(s.x2), y2: Y(s.y2), ...stroke, fill: 'none', 'stroke-linecap': 'round' });
+        hit = sv('line', { x1: X(s.x), y1: Y(s.y), x2: X(s.x2), y2: Y(s.y2), stroke: 'transparent', 'stroke-width': 22, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'stroke' });
+      } else {
+        main = sv('text', { x: X(s.x), y: Y(s.y), fill: s.color, 'font-size': s.size * px, 'font-family': 'system-ui, sans-serif', 'dominant-baseline': 'hanging', 'pointer-events': 'all' });
+        main.textContent = s.text || 'Text';
+      }
+      if (!s.fill && ['rect', 'ellipse', 'triangle'].includes(s.type)) {
+        // a fat invisible outline so thin shapes are easy to grab with a finger
+        hit = main.cloneNode(false); hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', 22); hit.setAttribute('pointer-events', 'stroke');
+      }
+      g.append(...[main, hit].filter(Boolean));
+      if (s.text && s.type !== 'text') {
+        const label = sv('text', { x: X(s.type === 'line' ? (s.x + s.x2) / 2 : s.x + s.w / 2), y: Y(s.type === 'line' ? (s.y + s.y2) / 2 : s.y + s.h / 2), fill: '#fff', 'font-size': s.size * px, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-family': 'system-ui, sans-serif', 'pointer-events': 'none' });
+        label.textContent = s.text; g.append(label);
+      }
+      lay.svg.append(g);
+      if (s.id === lay.shape && s.id !== '__new') {
+        const hs = s.type === 'line' ? [['p1', s.x, s.y], ['p2', s.x2, s.y2]] : s.type === 'text' ? [] : [['br', s.x + s.w, s.y + s.h]];
+        for (const [k, hx, hy] of hs) lay.handles.appendChild(el('div', { class: 'lay-handle', 'data-h': k, style: `left:${hx * 100}%;top:${hy * 100}%;pointer-events:auto` }));
+        if (s.type !== 'line') {
+          const bw = s.type === 'text' ? Math.max(0.05, (s.text || 'Text').length * s.size * 0.6 / lay.w) : s.w; const bh = s.type === 'text' ? s.size * 1.3 / lay.h : s.h;
+          lay.handles.appendChild(el('div', { style: `position:absolute;left:${s.x * 100}%;top:${s.y * 100}%;width:${bw * 100}%;height:${bh * 100}%;border:1px dashed var(--accent2);pointer-events:none` }));
+        }
+      }
+    }
+  }
+
+  function paintFixtures() {
+    lay.fxLayer.replaceChildren();
+    lay.nodes = new Map();
+    const sel = new Set(show.selection.mode === 'fix' ? show.selection.ids : []);
+    for (const f of show.patch) {
+      const p = show.layout.pos[f.id];
+      if (!p) continue;
+      const n = el('div', { class: `lay-fx${sel.has(f.id) ? ' sel' : ''}${show.conflicts.includes(f.id) ? ' bad' : ''}`, 'data-fid': f.id, title: `${f.num} ${f.name}`, style: `left:${p.x * 100}%;top:${p.y * 100}%` }, String(f.num));
+      lay.nodes.set(f.id, n);
+      lay.fxLayer.appendChild(n);
+    }
+  }
+
+  function layPoint(e) {
+    const r = lay.canvasEl.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  }
+  const additive = (e) => e.shiftKey || e.ctrlKey || e.metaKey || ui.multi;
+
+  function layDown(e) {
+    if (e.button != null && e.button > 0) return;
+    const pt = layPoint(e);
+    const fx = e.target.closest('[data-fid]');
+    const hd = e.target.closest('[data-h]');
+    const sh = e.target.closest('[data-sid]');
+    try { lay.canvasEl.setPointerCapture(e.pointerId); } catch (x) { /* pointer already gone */ }
+    if (hd && lay.shape) {
+      const s = show.layout.shapes.find((x) => x.id === lay.shape);
+      lay.drag = { kind: 'resize', h: hd.dataset.h, s, moved: false };
+    } else if (fx && lay.tool === 'select') {
+      const id = fx.dataset.fid;
+      const selIds = show.selection.mode === 'fix' ? show.selection.ids : [];
+      const group = selIds.includes(id) ? selIds.filter((i) => show.layout.pos[i]) : [id];
+      lay.drag = { kind: 'fix', id, start: pt, group, orig: Object.fromEntries(group.map((i) => [i, { ...show.layout.pos[i] }])), moved: false, add: additive(e) };
+    } else if (lay.tool !== 'select') {
+      lay.drag = { kind: 'draw', start: pt, moved: false };
+    } else if (sh) {
+      const s = show.layout.shapes.find((x) => x.id === sh.dataset.sid);
+      lay.shape = s ? s.id : null;
+      lay.drag = s ? { kind: 'shape', s, start: pt, moved: false } : null;
+      paintShapes(); drawSide();
+    } else {
+      lay.drag = { kind: 'band', start: pt, moved: false, add: additive(e) };
+    }
+    e.preventDefault();
+  }
+
+  function layMove(e) {
+    const d = lay.drag; if (!d) return;
+    const pt = layPoint(e);
+    const dx = pt.x - (d.start ? d.start.x : 0); const dy = pt.y - (d.start ? d.start.y : 0);
+    if (!d.moved && (Math.abs(dx) * lay.w > 4 || Math.abs(dy) * lay.h > 4 || d.kind === 'resize')) d.moved = true;
+    if (!d.moved) return;
+    if (d.kind === 'fix') {
+      d.pos = {};
+      for (const id of d.group) {
+        const o = d.orig[id]; const np = { x: clamp01(o.x + dx), y: clamp01(o.y + dy) };
+        d.pos[id] = np;
+        const n = lay.nodes.get(id); if (n) { n.style.left = `${np.x * 100}%`; n.style.top = `${np.y * 100}%`; }
+      }
+    } else if (d.kind === 'shape') {
+      const s = d.s; const nx = s.x + dx; const ny = s.y + dy;
+      lay.draft = { ...s, x: nx, y: ny, x2: s.x2 + dx, y2: s.y2 + dy };
+      paintShapes();
+    } else if (d.kind === 'resize') {
+      const s = d.s;
+      if (s.type === 'line') lay.draft = d.h === 'p1' ? { ...s, x: pt.x, y: pt.y } : { ...s, x2: pt.x, y2: pt.y };
+      else lay.draft = { ...s, w: Math.max(0.01, pt.x - s.x), h: Math.max(0.01, pt.y - s.y) };
+      paintShapes();
+    } else if (d.kind === 'draw') {
+      const t = lay.tool;
+      lay.draft = { id: '__new', type: t, color: lay.colour, fill: lay.fill, width: 2, text: '', size: 16, x: Math.min(d.start.x, pt.x), y: Math.min(d.start.y, pt.y), w: Math.abs(dx), h: Math.abs(dy), x2: pt.x, y2: pt.y };
+      if (t === 'line') { lay.draft.x = d.start.x; lay.draft.y = d.start.y; }
+      paintShapes();
+    } else if (d.kind === 'band') {
+      const x0 = Math.min(d.start.x, pt.x); const y0 = Math.min(d.start.y, pt.y);
+      d.rect = { x0, y0, x1: Math.max(d.start.x, pt.x), y1: Math.max(d.start.y, pt.y) };
+      Object.assign(lay.band.style, { display: 'block', left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(d.rect.x1 - x0) * 100}%`, height: `${(d.rect.y1 - y0) * 100}%` });
+    }
+  }
+
+  async function layUp(e) {
+    const d = lay.drag; if (!d) return;
+    try { lay.canvasEl.releasePointerCapture(e.pointerId); } catch (x) { /* already released */ }
+    const draft = lay.draft;
+    lay.drag = null; lay.draft = null;
+    lay.band.style.display = 'none';
+    const selIds = show.selection.mode === 'fix' ? show.selection.ids : [];
+    if (d.kind === 'fix') {
+      if (d.moved) await call('setLayoutPositions', Object.entries(d.pos || {}).map(([id, p]) => ({ id, x: p.x, y: p.y })));
+      else {
+        let ids;
+        if (d.add) ids = selIds.includes(d.id) ? selIds.filter((x) => x !== d.id) : selIds.concat(d.id);
+        else ids = selIds.length === 1 && selIds[0] === d.id ? [] : [d.id];
+        lay.shape = null;
+        await call('setSelection', { mode: 'fix', ids });
+      }
+    } else if (d.kind === 'shape' || d.kind === 'resize') {
+      if (draft && d.moved) await call('updateShape', draft.id, draft);
+      else paintShapes();
+    } else if (d.kind === 'draw') {
+      const t = lay.tool;
+      const tiny = !draft || (draft.w < 0.01 && draft.h < 0.01 && Math.hypot(draft.x2 - draft.x, draft.y2 - draft.y) < 0.01);
+      let o = null;
+      if (t === 'text') o = { type: 'text', x: d.start.x, y: d.start.y, text: 'Text', color: lay.colour, size: 20 };
+      else if (!tiny) o = { ...draft, type: t };
+      lay.tool = 'select';
+      if (o) {
+        const r = await call('addShape', o);
+        if (r && r.ok) lay.shape = r.result;
+      }
+      renderView(true);
+    } else if (d.kind === 'band') {
+      if (d.moved && d.rect) {
+        const inside = show.patch.filter((f) => { const p = show.layout.pos[f.id]; return p && p.x >= d.rect.x0 && p.x <= d.rect.x1 && p.y >= d.rect.y0 && p.y <= d.rect.y1; }).map((f) => f.id);
+        await call('setSelection', { mode: 'fix', ids: d.add ? Array.from(new Set(selIds.concat(inside))) : inside });
+      } else {
+        const hadShape = !!lay.shape; lay.shape = null;
+        if (!d.add && selIds.length) await call('setSelection', { mode: 'fix', ids: [] });
+        else if (hadShape) { paintShapes(); drawSide(); }
+      }
+    }
+    if (ui.pending) renderView(true);
+  }
+
+  function drawSide() {
+    const L = show.layout;
+    const s = show.layout.shapes.find((x) => x.id === lay.shape);
+    const unplaced = show.patch.filter((f) => !L.pos[f.id]);
+    const file = el('input', { type: 'file', accept: 'image/*', style: 'display:none', onchange: (e) => { pickImage(e.target.files[0]); e.target.value = ''; } });
+    const parts = [
+      el('h3', {}, 'Background'),
+      el('div', { class: 'row' }, el('button', { class: 'primary', onclick: () => file.click() }, L.hasBg ? 'Change image…' : 'Choose image…'),
+        L.hasBg ? el('button', { class: 'danger', onclick: () => call('setLayoutImage', null) }, 'Remove') : null, file),
+      el('div', { class: 'hint' }, 'A stage plan, floor plan or photo. It is saved inside the show.'),
+      el('h3', { style: 'margin-top:6px' }, 'Draw'),
+      el('div', { class: 'chips' }, SHAPE_TOOLS.map(([id, label]) => el('button', { class: lay.tool === id ? 'primary' : '', onclick: () => { lay.tool = id; lay.canvasEl.classList.toggle('draw', id !== 'select'); drawSide(); } }, label))),
+      el('div', { class: 'row' }, el('label', {}, 'Colour'),
+        el('input', { type: 'color', value: s ? s.color : lay.colour, onchange: (e) => { if (s) call('updateShape', s.id, { color: e.target.value }); else lay.colour = e.target.value; } }),
+        el('label', { style: 'width:auto' }, el('input', { type: 'checkbox', checked: s ? s.fill : lay.fill, onchange: (e) => { if (s) call('updateShape', s.id, { fill: e.target.checked }); else lay.fill = e.target.checked; } }), ' Fill')),
+    ];
+    if (s) {
+      parts.push(el('h3', { style: 'margin-top:6px' }, `Selected ${s.type}`),
+        el('div', { class: 'row' }, el('label', {}, s.type === 'text' ? 'Text' : 'Label'), el('input', { type: 'text', value: s.text, style: 'flex:1', onchange: (e) => call('updateShape', s.id, { text: e.target.value }) })),
+        el('div', { class: 'row' }, el('label', {}, 'Text size'), el('input', { type: 'number', min: 8, max: 96, value: s.size, style: 'width:70px', onchange: (e) => call('updateShape', s.id, { size: e.target.value }) })),
+        s.type !== 'text' ? el('div', { class: 'row' }, el('label', {}, 'Line'), el('input', { type: 'number', min: 1, max: 20, value: s.width, style: 'width:70px', onchange: (e) => call('updateShape', s.id, { width: e.target.value }) })) : null,
+        el('div', { class: 'row' }, el('button', { onclick: () => call('moveShape', s.id, true) }, 'Bring to front'), el('button', { onclick: () => call('moveShape', s.id, false) }, 'Send to back'),
+          el('button', { class: 'danger', onclick: () => { lay.shape = null; call('removeShape', s.id); } }, 'Delete')));
+    }
+    parts.push(el('h3', { style: 'margin-top:6px' }, 'Fixtures', el('span', { class: 'grow' }),
+      el('button', { class: ui.multi ? 'primary' : '', title: 'Tap several fixtures to select them together', onclick: () => { ui.multi = !ui.multi; drawSide(); } }, ui.multi ? 'Multi ✓' : 'Multi')));
+    if (!show.patch.length) parts.push(el('div', { class: 'hint' }, 'Patch some fixtures first.'));
+    else {
+      parts.push(el('div', { class: 'hint' }, unplaced.length ? `${unplaced.length} not on the layout yet. Tap one to drop it in the middle, then drag it into place.` : 'All fixtures are placed. Drag to move; drag on empty space to box-select.'));
+      if (unplaced.length) {
+        parts.push(el('div', { class: 'chips' }, unplaced.slice(0, 120).map((f) => el('button', { title: f.name, onclick: () => call('setLayoutPositions', [{ id: f.id, x: 0.5, y: 0.5 }]) }, String(f.num)))),
+          el('div', { class: 'row' }, el('button', { class: 'primary', onclick: () => call('layoutAuto') }, 'Place all in a grid')));
+      }
+      const placedSel = (show.selection.mode === 'fix' ? show.selection.ids : []).filter((id) => L.pos[id]);
+      parts.push(el('div', { class: 'row' },
+        el('button', { disabled: !placedSel.length, onclick: () => call('removeLayoutPositions', placedSel) }, 'Take selected off'),
+        el('button', { class: 'danger', disabled: !L.shapes.length, onclick: () => { lay.shape = null; call('clearShapes'); } }, 'Clear shapes')));
+    }
+    parts.push(el('div', { class: 'hint' }, `Selection: ${selectionText()}. Set levels and colours on the Desk tab or the command line, and the fixtures here show them live.`));
+    lay.sideEl.replaceChildren(...parts.filter(Boolean));
+  }
+
+  if (!window.__layResize) { window.__layResize = true; window.addEventListener('resize', () => { if (ui.tab === 'layout' && show && !lay.drag) renderView(true); }); }
+
+  const taps = [];
   function renderEffects() {
     const catSel = el('select', { value: fxUi.cat }, ['All'].concat(lib.categories).map((c) => el('option', { value: c }, c)));
     const search = el('input', { type: 'text', placeholder: `search ${lib.effects.length} effects: fire, police, lightning…`, value: fxUi.q, style: 'flex:1' });
     const list = el('select', { size: 12, style: 'width:100%' });
     const info = el('span', { class: 'hint' });
-    const rate = el('input', { type: 'number', step: 0.1, min: 0.02, max: 25, value: 1, style: 'width:70px' });
+    const rate = el('input', { type: 'number', step: 1, min: 1, max: 1500, value: 60, style: 'width:80px' });
     const fill = () => {
       fxUi.cat = catSel.value; fxUi.q = search.value;
       const keep = list.value;
@@ -389,12 +677,13 @@
     };
     catSel.addEventListener('change', fill);
     search.addEventListener('input', fill);
-    const doAdd = () => { if (list.value) call('addEffect', { type: list.value, rate: parseFloat(rate.value) || 1 }); };
+    const doAdd = () => { if (list.value) call('addEffect', { type: list.value, rate: (parseFloat(rate.value) || 60) / 60 }); };
     list.addEventListener('dblclick', doAdd);
     const add = el('div', { class: 'panel' }, el('h3', {}, 'Add effect to current selection', el('span', { class: 'grow' }), info),
       el('div', { class: 'row' }, catSel, search),
       list,
-      el('div', { class: 'row', style: 'margin-top:8px' }, el('label', { style: 'width:auto' }, 'Rate Hz'), rate,
+      el('div', { class: 'row', style: 'margin-top:8px' }, el('label', { style: 'width:auto' }, 'Speed BPM'), rate,
+        el('button', { title: 'Tap the beat to set the speed', onclick: () => { const now = Date.now(); taps.push(now); while (taps.length && now - taps[0] > 3000) taps.shift(); if (taps.length >= 2) { rate.value = Math.round(60000 / ((taps[taps.length - 1] - taps[0]) / (taps.length - 1))); } } }, 'Tap'),
         el('button', { class: 'primary', onclick: doAdd }, 'Add effect')),
       el('div', { class: 'hint', style: 'margin-top:8px' }, `Selection: ${selectionText()}. Double-click an effect to add it. Effects ride on top of cues and the programmer, and are not recorded into cues. Film effects work on any fixture: colour ones use RGB, CCT or bi-colour channels, whichever the fixture has.`));
     fill();
@@ -404,7 +693,7 @@
         el('td', {}, el('input', { type: 'checkbox', checked: e.on, onchange: (ev) => call('updateEffect', e.id, { on: ev.target.checked }) })),
         el('td', {}, el('select', { value: e.type, onchange: (ev) => call('updateEffect', e.id, { type: ev.target.value }) },
           lib.categories.map((cat) => el('optgroup', { label: cat }, lib.effects.filter((x) => x.cat === cat).map((x) => el('option', { value: x.id }, x.name)))))),
-        el('td', {}, el('input', { class: 'n', type: 'number', step: 0.1, value: e.rate, onchange: (ev) => call('updateEffect', e.id, { rate: ev.target.value }) })),
+        el('td', {}, el('input', { class: 'n', type: 'number', step: 1, min: 1, max: 1500, value: Math.round(e.rate * 600) / 10, onchange: (ev) => call('updateEffect', e.id, { rate: (parseFloat(ev.target.value) || 60) / 60 }) })),
         el('td', {}, el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: e.depth, onchange: (ev) => call('updateEffect', e.id, { depth: ev.target.value }) })),
         el('td', {}, el('input', { type: 'range', min: 0, max: 1, step: 0.05, value: e.spread, onchange: (ev) => call('updateEffect', e.id, { spread: ev.target.value }) })),
         el('td', {}, `${e.fixtureIds.length} fix`, ' ', el('button', { onclick: () => call('updateEffect', e.id, { useSelection: true }) }, 'Use selection')),
@@ -413,7 +702,7 @@
 
     $('#view').replaceChildren(el('div', { class: 'stack' }, add, el('div', { class: 'panel' }, el('h3', {}, 'Running effects'),
       show.effects.length
-        ? el('table', {}, el('thead', {}, el('tr', {}, ['On', 'Effect', 'Rate Hz', 'Depth', 'Spread', 'Fixtures', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows))
+        ? el('table', {}, el('thead', {}, el('tr', {}, ['On', 'Effect', 'BPM', 'Depth', 'Spread', 'Fixtures', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows))
         : el('div', { class: 'hint' }, 'No effects. Select fixtures on the Desk, then add one here.'))));
   }
 
@@ -621,19 +910,20 @@
   function viewSig(s) {
     return JSON.stringify([
       s.patch.map((f) => f.id), s.cues.map((c) => c.id + ':' + Object.keys(c.values).length), s.effects.map((e) => e.id + ':' + e.fixtureIds.join('.')),
-      s.profiles.map((p) => p.id + p.name + p.channels.length), s.selection, s.currentUniverse, s.conflicts, s.currentCue, s.settings.universes, s.name,
+      s.profiles.map((p) => p.id + p.name + p.channels.length), s.layout, s.selection, s.currentUniverse, s.conflicts, s.currentCue, s.settings.universes, s.name,
     ]);
   }
 
   function renderView(force) {
     if (!show) return;
-    if (!force && isEditing()) { ui.pending = true; return; }
+    if (!force && (isEditing() || lay.drag)) { ui.pending = true; return; }
     ui.pending = false;
     ui.sig = viewSig(show);
     switch (ui.tab) {
       case 'patch': renderPatch(); break;
       case 'cues': renderCues(); break;
       case 'effects': renderEffects(); break;
+      case 'layout': renderLayout(); break;
       case 'output': renderOutput(); break;
       default: renderDesk();
     }
@@ -705,6 +995,12 @@
         }
         ui.intensity.input.value = Math.round((v / 255) * 100);
         ui.intensity.val.textContent = ui.intensity.input.value;
+      }
+    }
+    if (ui.tab === 'layout') {
+      for (const [id, node] of lay.nodes) {
+        const f = show.patch.find((x) => x.id === id);
+        if (f) node.style.background = fixtureColour(f, out);
       }
     }
     const s = show.settings;

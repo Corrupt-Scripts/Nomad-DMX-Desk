@@ -27,6 +27,32 @@ function defaultSettings() {
   };
 }
 
+const emptyLayout = () => ({ bg: null, bgVersion: 0, aspect: 16 / 9, pos: {}, shapes: [] });
+const SHAPES = ['rect', 'ellipse', 'line', 'triangle', 'text'];
+const COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
+const n01 = (v, d) => { const x = parseFloat(v); return Number.isFinite(x) ? clamp(x, -0.5, 1.5) : d; };
+function cleanShape(o, id) {
+  const type = SHAPES.includes(o.type) ? o.type : 'rect';
+  return {
+    id, type,
+    x: n01(o.x, 0.4), y: n01(o.y, 0.4), w: clamp(n01(o.w, 0.2), 0.005, 1.5), h: clamp(n01(o.h, 0.15), 0.005, 1.5),
+    x2: n01(o.x2, 0.6), y2: n01(o.y2, 0.4),
+    color: COLOUR_RE.test(o.color) ? o.color : '#8b5cf6',
+    fill: !!o.fill, width: clamp(parseFloat(o.width) || 2, 1, 20),
+    text: String(o.text == null ? '' : o.text).slice(0, 80), size: clamp(parseInt(o.size, 10) || 16, 8, 96),
+  };
+}
+const validImage = (u) => typeof u === 'string' && u.length < 8 * 1024 * 1024 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(u);
+function sanitizeLayout(l) {
+  const out = emptyLayout();
+  if (!l || typeof l !== 'object') return out;
+  if (validImage(l.bg)) { out.bg = l.bg; out.bgVersion = 1; }
+  out.aspect = clamp(parseFloat(l.aspect) || 16 / 9, 0.2, 5);
+  if (l.pos && typeof l.pos === 'object') for (const [id, p] of Object.entries(l.pos)) if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) out.pos[id] = { x: clamp(p.x, 0, 1), y: clamp(p.y, 0, 1) };
+  if (Array.isArray(l.shapes)) out.shapes = l.shapes.slice(0, 500).filter((s) => s && typeof s.id === 'string').map((s) => cleanShape(s, s.id));
+  return out;
+}
+
 class Engine {
   constructor() {
     this.onChange = () => {};
@@ -47,6 +73,7 @@ class Engine {
     this.patch = [];
     this.cues = [];
     this.effects = [];
+    this.layout = emptyLayout();
     this.gm = 1;
     this.blackout = false;
     this.programmer = new Map();
@@ -63,7 +90,7 @@ class Engine {
       format: 'nomad-dmx-desk', version: 1,
       name: this.showName,
       settings: this.settings, profiles: this.profiles, patch: this.patch,
-      cues: this.cues, effects: this.effects, gm: this.gm, nextId: this.nextId,
+      cues: this.cues, effects: this.effects, layout: this.layout, gm: this.gm, nextId: this.nextId,
     };
   }
 
@@ -77,6 +104,7 @@ class Engine {
     this.patch = Array.isArray(obj.patch) ? obj.patch : [];
     this.cues = Array.isArray(obj.cues) ? obj.cues : [];
     this.effects = Array.isArray(obj.effects) ? obj.effects : [];
+    this.layout = sanitizeLayout(obj.layout);
     this.gm = typeof obj.gm === 'number' ? clamp(obj.gm, 0, 1) : 1;
     this.nextId = obj.nextId || 1000;
     this.rebuildMask();
@@ -194,6 +222,7 @@ class Engine {
     this.patch = this.patch.filter((f) => f.id !== id);
     this.effects.forEach((e) => { e.fixtureIds = e.fixtureIds.filter((x) => x !== id); });
     this.selection.ids = this.selection.ids.filter((x) => x !== id);
+    delete this.layout.pos[id];
     this.rebuildMask();
     this.changed();
   }
@@ -362,6 +391,58 @@ class Engine {
     }
     if (p >= 1) this.playback.fade = null;
   }
+
+  // ------------------------------------------------------------------ layout
+  setLayoutImage(dataUrl, aspect) {
+    if (dataUrl == null) { this.layout.bg = null; this.layout.bgVersion++; this.changed(); return; }
+    if (!validImage(dataUrl)) throw new Error('That image could not be used (PNG, JPEG or WebP, under 8 MB)');
+    this.layout.bg = dataUrl;
+    this.layout.aspect = clamp(parseFloat(aspect) || 16 / 9, 0.2, 5);
+    this.layout.bgVersion++;
+    this.changed();
+  }
+  getLayoutImage() { return { bg: this.layout.bg, version: this.layout.bgVersion }; }
+  setLayoutPositions(list) {
+    for (const p of Array.isArray(list) ? list : []) {
+      if (!p || !this.fixture(p.id) || !Number.isFinite(+p.x) || !Number.isFinite(+p.y)) continue;
+      this.layout.pos[p.id] = { x: clamp(+p.x, 0, 1), y: clamp(+p.y, 0, 1) };
+    }
+    this.changed();
+  }
+  removeLayoutPositions(ids) { for (const id of ids || []) delete this.layout.pos[id]; this.changed(); }
+  // Drops every fixture that has no spot yet into tidy rows underneath whatever is placed.
+  layoutAuto(ids) {
+    const want = (ids && ids.length ? ids : this.patch.map((f) => f.id)).filter((id) => this.fixture(id) && !this.layout.pos[id]);
+    if (!want.length) return;
+    const per = Math.max(1, Math.ceil(Math.sqrt(want.length * this.layout.aspect)));
+    const rows = Math.ceil(want.length / per);
+    want.forEach((id, i) => {
+      this.layout.pos[id] = { x: (0.1 + 0.8 * ((i % per) + 0.5) / per), y: 0.1 + 0.8 * (Math.floor(i / per) + 0.5) / rows };
+    });
+    this.changed();
+  }
+  addShape(o) {
+    if (this.layout.shapes.length >= 500) throw new Error('Too many shapes');
+    const s = cleanShape(o || {}, this.id('s'));
+    this.layout.shapes.push(s);
+    this.changed();
+    return s.id;
+  }
+  updateShape(id, patch) {
+    const i = this.layout.shapes.findIndex((s) => s.id === id);
+    if (i < 0) return;
+    this.layout.shapes[i] = cleanShape(Object.assign({}, this.layout.shapes[i], patch || {}, { type: this.layout.shapes[i].type }), id);
+    this.changed();
+  }
+  removeShape(id) { this.layout.shapes = this.layout.shapes.filter((s) => s.id !== id); this.changed(); }
+  moveShape(id, toFront) {
+    const i = this.layout.shapes.findIndex((s) => s.id === id);
+    if (i < 0) return;
+    const [s] = this.layout.shapes.splice(i, 1);
+    if (toFront) this.layout.shapes.push(s); else this.layout.shapes.unshift(s);
+    this.changed();
+  }
+  clearShapes() { this.layout.shapes = []; this.changed(); }
 
   // ----------------------------------------------------------------- effects
   addEffect(o) {
@@ -617,6 +698,7 @@ class Engine {
       cues: this.cues,
       currentCue: this.playback.current,
       effects: this.effects,
+      layout: { aspect: this.layout.aspect, hasBg: !!this.layout.bg, bgVersion: this.layout.bgVersion, pos: this.layout.pos, shapes: this.layout.shapes },
       gm: Math.round(this.gm * 100),
       blackout: this.blackout,
       selection: this.selection,

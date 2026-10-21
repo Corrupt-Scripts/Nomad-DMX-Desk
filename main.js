@@ -29,6 +29,7 @@ const ALLOWED = new Set([
   'getShow', 'getLibrary', 'execute', 'setUniverse', 'setSelection', 'setLevel', 'setColour', 'setParam', 'setChannel',
   'clearProgrammer', 'clearAll', 'setMaster', 'setBlackout', 'go', 'back', 'goto', 'stop', 'release',
   'recordCue', 'updateCue', 'deleteCue', 'goIndex', 'addEffect', 'updateEffect', 'removeEffect',
+  'setLayoutImage', 'getLayoutImage', 'setLayoutPositions', 'removeLayoutPositions', 'layoutAuto', 'addShape', 'updateShape', 'removeShape', 'moveShape', 'clearShapes',
   'addFixtures', 'updateFixture', 'removeFixture', 'saveProfile', 'deleteProfile', 'updateSettings',
 ]);
 
