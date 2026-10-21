@@ -37,7 +37,7 @@ jobs:
       - name: Create the iOS project
         working-directory: ipad
         run: |
-          npx cap add ios --packagemanager SPM
+          npx cap add ios
           npx cap sync ios
           ./scripts/prepare-ios.sh
 
