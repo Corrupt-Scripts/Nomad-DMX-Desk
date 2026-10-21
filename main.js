@@ -25,13 +25,7 @@ const loadRemoteCfg = () => {
 const saveRemoteCfg = () => { try { fs.writeFileSync(remoteCfgPath(), JSON.stringify(remoteCfg)); } catch (e) { /* ignore */ } };
 const autosavePath = () => path.join(app.getPath('userData'), 'autosave.nomaddmx');
 
-const ALLOWED = new Set([
-  'getShow', 'getLibrary', 'execute', 'setUniverse', 'setSelection', 'setLevel', 'setColour', 'setParam', 'setChannel',
-  'clearProgrammer', 'clearAll', 'setMaster', 'setBlackout', 'go', 'back', 'goto', 'stop', 'release',
-  'recordCue', 'updateCue', 'deleteCue', 'goIndex', 'addEffect', 'updateEffect', 'removeEffect',
-  'setLayoutImage', 'getLayoutImage', 'setLayoutPositions', 'removeLayoutPositions', 'layoutAuto', 'addShape', 'updateShape', 'removeShape', 'moveShape', 'clearShapes',
-  'addFixtures', 'updateFixture', 'removeFixture', 'saveProfile', 'deleteProfile', 'updateSettings',
-]);
+const { ALLOWED } = require('./engine/api');
 
 remote = createRemote({ engine, allowed: ALLOWED, rendererDir: path.join(__dirname, 'renderer') });
 

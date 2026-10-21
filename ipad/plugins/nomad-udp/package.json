@@ -1,0 +1,10 @@
+{
+  "name": "nomad-udp",
+  "version": "0.1.0",
+  "description": "Raw UDP send/receive for Nomad DMX Desk (Art-Net / sACN) on iOS",
+  "main": "index.js",
+  "files": ["ios/Sources", "Package.swift", "index.js"],
+  "capacitor": { "ios": { "src": "ios" } },
+  "peerDependencies": { "@capacitor/core": ">=7.0.0" },
+  "license": "MIT"
+}

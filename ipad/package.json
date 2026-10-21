@@ -1,0 +1,24 @@
+{
+  "name": "nomad-dmx-desk-ipad",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Nomad DMX Desk for iPad (Capacitor wrapper around the same engine and screen)",
+  "scripts": {
+    "build:web": "node build-web.mjs",
+    "test": "node test-bundle.mjs"
+  },
+  "dependencies": {
+    "@capacitor-community/bluetooth-le": "7.3.2",
+    "@capacitor-community/keep-awake": "7.1.0",
+    "@capacitor/cli": "7.6.9",
+    "@capacitor/core": "7.6.9",
+    "@capacitor/filesystem": "7.1.9",
+    "@capacitor/ios": "7.6.9",
+    "buffer": "6.0.3",
+    "esbuild": "0.25.10",
+    "nomad-udp": "file:plugins/nomad-udp"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

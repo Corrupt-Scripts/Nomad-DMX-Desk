@@ -1,0 +1,6 @@
+{
+  "appId": "com.corruptscripts.nomaddmx",
+  "appName": "Nomad DMX",
+  "webDir": "www",
+  "ios": { "contentInset": "never", "backgroundColor": "#0e0b14" }
+}

@@ -756,7 +756,7 @@
     if (net.nodes && net.nodes.length) {
       body = el('table', {}, el('thead', {}, el('tr', {}, ['Node', 'Address', 'Art-Net universes', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows));
     } else {
-      body = el('div', { class: 'hint' }, net.scanning ? 'Looking for Art-Net nodes…' : net.nodes ? 'No Art-Net nodes answered. Make sure this computer is on the same Wi-Fi or network as the box (join its Wi-Fi below), then scan again. Sending to everyone also works with most nodes.' : '');
+      body = el('div', { class: 'hint' }, net.scanning ? 'Looking for Art-Net nodes…' : net.nodes ? (window.desk.native ? 'No Art-Net nodes answered. Join the lighting box\'s Wi-Fi in the iPad Settings app first, then scan again. If it is still not found, type its address under Advanced: iPadOS can hide broadcast replies from apps.' : 'No Art-Net nodes answered. Make sure this computer is on the same Wi-Fi or network as the box (join its Wi-Fi below), then scan again. Sending to everyone also works with most nodes.') : '');
     }
     return [
       el('h3', {}, 'Lighting nodes on this network', el('span', { class: 'grow' }), el('button', { class: 'primary', disabled: net.scanning, onclick: scanNodes }, net.scanning ? 'Scanning…' : 'Scan')),
@@ -891,6 +891,15 @@
     if (window.desk.remote) {
       $('#view').replaceChildren(el('div', { class: 'panel', style: 'max-width:780px' }, el('h3', {}, 'Output'),
         el('div', { class: 'hint' }, 'You are controlling the desk remotely. Network and Bluetooth output are set up on the computer running Nomad DMX Desk.')));
+      return;
+    }
+    if (window.desk.native) {
+      $('#view').replaceChildren(el('div', { class: 'stack', style: 'max-width:780px' },
+        el('div', { class: 'panel' }, el('h3', {}, 'iPad'),
+          el('div', { class: 'hint' }, 'Keep this app open on screen while the lights are running: iPadOS pauses apps in the background, which stops the DMX. The iPad is kept awake while the app is open.'),
+          el('div', { class: 'hint', style: 'margin-top:6px' }, 'Wi-Fi is chosen in the iPad Settings app. sACN multicast is not available on iPad (Apple restricts it), so use Art-Net or sACN to a node\'s address.')),
+        mountCard('net', netCard), mountCard('ble', bleCard), mountCard('adv', advCard)));
+      if (net.nodes == null && !net.scanning) scanNodes();
       return;
     }
     $('#view').replaceChildren(el('div', { class: 'stack', style: 'max-width:780px' },

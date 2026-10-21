@@ -1,6 +1,6 @@
 {
   "name": "nomad-dmx-desk",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Cross-platform DMX lighting desk (Art-Net / sACN) for Windows and macOS",
   "main": "main.js",
   "author": "Corrupt Scripts",

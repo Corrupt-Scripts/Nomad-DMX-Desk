@@ -1,0 +1,71 @@
+name: iPad app (unsigned IPA)
+
+on:
+  push:
+    branches: [main]
+    paths: ['ipad/**', 'engine/**', 'renderer/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          node -v
+
+      - name: Install
+        working-directory: ipad
+        run: npm install --no-audit --no-fund
+
+      - name: Test the web bundle
+        working-directory: ipad
+        run: npm test
+
+      - name: Create the iOS project
+        working-directory: ipad
+        run: |
+          npx cap add ios --packagemanager SPM
+          npx cap sync ios
+          ./scripts/prepare-ios.sh
+
+      - name: Build (unsigned)
+        working-directory: ipad
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        working-directory: ipad
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          APP=$(find build/Build/Products -maxdepth 2 -name 'App.app' | head -1)
+          echo "Found $APP"
+          rm -rf Payload && mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry "NomadDMX-$VERSION-unsigned.ipa" Payload
+          ls -la *.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nomad-dmx-desk-ipad
+          path: ipad/NomadDMX-*-unsigned.ipa
