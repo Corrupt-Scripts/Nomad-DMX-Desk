@@ -429,6 +429,8 @@
     paintFixtures();
     paintShapes();
     paintBg();
+    // iPad: stop Safari turning a drag on the canvas into a scroll/zoom (which cancels the pointer).
+    for (const ev of ['touchstart', 'touchmove']) canvas.addEventListener(ev, (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
     canvas.addEventListener('pointerdown', layDown);
     canvas.addEventListener('pointermove', layMove);
     canvas.addEventListener('pointerup', layUp);
