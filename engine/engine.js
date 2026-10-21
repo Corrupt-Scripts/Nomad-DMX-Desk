@@ -12,12 +12,14 @@ function defaultSettings() {
   return {
     protocol: 'artnet',       // artnet | sacn | both
     artnetDest: '255.255.255.255',
-    artnetFirst: 0,           // Art-Net universe number that desk universe 1 sends to (0 or 1)
+    artnetFirst: 0,           // Art-Net universe number that desk universe 1 sends to (0 = standard)
     sacnUnicast: '',          // empty = multicast
     sacnPriority: 100,
     bindIp: '',               // optional: network interface address to send from
     universes: 1,
     fps: 30,
+    bleFormat: 'OFFSET',      // Bluetooth packet format: OFFSET (2-byte offset + 18 data) or PLAIN
+    bleUniverse: 1,           // which desk universe goes out over Bluetooth
     artnetPort: 6454,
     sacnPort: 5568,
   };
@@ -461,7 +463,7 @@ class Engine {
       const u = i + 1;
       this.seq[u] = (this.seq[u] % 255) + 1;
       if (s.protocol === 'artnet' || s.protocol === 'both') {
-        const pkt = artnetPacket(u - 1 + (s.artnetFirst ? 1 : 0), this.seq[u], data);
+        const pkt = artnetPacket(u - 1 + (parseInt(s.artnetFirst, 10) || 0), this.seq[u], data);
         try { sock.send(pkt, s.artnetPort, s.artnetDest || '255.255.255.255', done); } catch (e) { this.stats.lastError = e.message; }
       }
       if (s.protocol === 'sacn' || s.protocol === 'both') {
@@ -489,7 +491,9 @@ class Engine {
     const s = this.settings;
     if (patch.protocol && ['artnet', 'sacn', 'both'].includes(patch.protocol)) s.protocol = patch.protocol;
     if (patch.artnetDest != null) s.artnetDest = String(patch.artnetDest).trim() || '255.255.255.255';
-    if (patch.artnetFirst != null) s.artnetFirst = patch.artnetFirst ? 1 : 0;
+    if (patch.artnetFirst != null) s.artnetFirst = clamp(parseInt(patch.artnetFirst, 10) || 0, 0, 32000);
+    if (patch.bleFormat != null && ['OFFSET', 'PLAIN'].includes(patch.bleFormat)) s.bleFormat = patch.bleFormat;
+    if (patch.bleUniverse != null) s.bleUniverse = clamp(parseInt(patch.bleUniverse, 10) || 1, 1, MAX_UNIVERSES);
     if (patch.sacnUnicast != null) s.sacnUnicast = String(patch.sacnUnicast).trim();
     if (patch.sacnPriority != null) s.sacnPriority = clamp(parseInt(patch.sacnPriority, 10) || 100, 0, 200);
     if (patch.bindIp != null) s.bindIp = String(patch.bindIp).trim();

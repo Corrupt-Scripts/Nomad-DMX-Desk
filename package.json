@@ -1,6 +1,6 @@
 {
   "name": "nomad-dmx-desk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cross-platform DMX lighting desk (Art-Net / sACN) for Windows and macOS",
   "main": "main.js",
   "author": "Corrupt Scripts",
@@ -20,20 +20,59 @@
   "build": {
     "appId": "uk.corruptscripts.nomaddmxdesk",
     "productName": "Nomad DMX Desk",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "engine/**", "renderer/**", "package.json"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "engine/**",
+      "renderer/**",
+      "package.json"
+    ],
     "mac": {
       "category": "public.app-category.video",
       "identity": null,
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }]
+      "extendInfo": {
+        "NSBluetoothAlwaysUsageDescription": "Nomad DMX Desk uses Bluetooth to send DMX to wireless receivers.",
+        "NSBluetoothPeripheralUsageDescription": "Nomad DMX Desk uses Bluetooth to send DMX to wireless receivers.",
+        "NSLocalNetworkUsageDescription": "Nomad DMX Desk sends DMX over your local network (Art-Net and sACN)."
+      },
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    }
   }
 }

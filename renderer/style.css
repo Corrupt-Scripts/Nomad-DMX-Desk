@@ -95,3 +95,5 @@ td input.n { width: 72px; }
 #cmd { flex: 1; font: 15px ui-monospace, SFMono-Regular, Consolas, monospace; padding: 8px 10px; }
 #statusline { margin-top: 4px; font-size: 11px; color: var(--dim); display: flex; gap: 16px; }
 .err-text { color: var(--bad); }
+
+.pill.ok { color: var(--ok); border-color: var(--ok); }

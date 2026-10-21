@@ -197,6 +197,62 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     assert.ok(e.stats.packets > 0);
   });
 
+  const disc = require('../engine/discovery');
+
+  await t('ArtPollReply parsing', () => {
+    const b = Buffer.alloc(239);
+    b.write('Art-Net\0', 0, 'ascii'); b.writeUInt16LE(0x2100, 8);
+    [192, 168, 4, 1].forEach((x, i) => { b[10 + i] = x; });
+    b.write('BoulderBox', 26, 'latin1'); b.write('Boulder Box wireless DMX', 44, 'latin1');
+    b[18] = 0; b[19] = 2; b.writeUInt16BE(2, 172); b[174] = 0x80; b[175] = 0x80; b[190] = 1; b[191] = 3;
+    [1, 2, 3, 4, 5, 6].forEach((x, i) => { b[201 + i] = x; });
+    const n = disc.parseArtPollReply(b, { address: '9.9.9.9' });
+    assert.strictEqual(n.ip, '192.168.4.1'); assert.strictEqual(n.shortName, 'BoulderBox');
+    assert.strictEqual(n.longName, 'Boulder Box wireless DMX');
+    assert.deepStrictEqual(n.outputs, [0x21, 0x23]); assert.strictEqual(n.mac, '01:02:03:04:05:06');
+    assert.strictEqual(disc.parseArtPollReply(Buffer.alloc(300), null), null);
+    assert.strictEqual(disc.artPollPacket().length, 14);
+  });
+
+  await t('Art-Net scan finds a node (loopback)', async () => {
+    const node = dgram.createSocket('udp4');
+    await new Promise((r) => node.bind(0, '127.0.0.1', r));
+    let polled = 0;
+    node.on('message', (m, rinfo) => {
+      if (m.readUInt16LE(8) !== 0x2000) return;
+      polled++;
+      const b = Buffer.alloc(239); b.write('Art-Net\0', 0, 'ascii'); b.writeUInt16LE(0x2100, 8);
+      [127, 0, 0, 1].forEach((x, i) => { b[10 + i] = x; });
+      b.write('TestNode', 26, 'latin1'); b.writeUInt16BE(1, 172); b[174] = 0x80; b[190] = 0;
+      node.send(b, rinfo.port, '127.0.0.1');
+    });
+    const nodes = await disc.artnetScan({ port: node.address().port, listenPort: 0, targets: ['127.0.0.1'], timeoutMs: 900 });
+    node.close();
+    assert.ok(polled >= 1, 'node was polled');
+    assert.strictEqual(nodes.length, 1); assert.strictEqual(nodes[0].shortName, 'TestNode'); assert.deepStrictEqual(nodes[0].outputs, [0]);
+  });
+
+  await t('Wi-Fi output parsers + profile', () => {
+    const netsh = 'Interface name : Wi-Fi \r\nThere are 3 networks currently visible.\r\n\r\nSSID 1 : BoulderBox\r\n    Network type            : Infrastructure\r\n    Authentication          : Open\r\n    Encryption              : None\r\n    BSSID 1                 : aa:bb:cc:dd:ee:ff\r\n         Signal             : 81%\r\n         Radio type         : 802.11n\r\nSSID 2 : Home WiFi\r\n    Authentication          : WPA2-Personal\r\n    BSSID 1                 : 11:22:33:44:55:66\r\n         Signal             : 40%\r\n    BSSID 2                 : 11:22:33:44:55:67\r\n         Signal             : 72%\r\nSSID 3 : \r\n    Authentication          : Open\r\n';
+    const nets = disc.parseNetsh(netsh);
+    assert.deepStrictEqual(nets.map((x) => [x.ssid, x.security, x.signal]), [['BoulderBox', 'open', 81], ['Home WiFi', 'secured', 72]]);
+    const mac = disc.parseMacProfiler({ SPAirPortDataType: [{ spairport_airport_interfaces: [{
+      spairport_current_network_information: { _name: 'Home', spairport_security_mode: 'spairport_security_mode_wpa2_personal', spairport_signal_noise: '-50 dBm / -90 dBm' },
+      spairport_airport_other_local_wireless_networks: [{ _name: 'BoulderBox', spairport_security_mode: 'spairport_security_mode_none', spairport_signal_noise: '-60 dBm / -90 dBm' }, { _name: '<redacted>' }] }] }] });
+    assert.deepStrictEqual(mac.networks.map((x) => [x.ssid, x.security, x.current]), [['Home', 'secured', true], ['BoulderBox', 'open', false]]);
+    assert.strictEqual(mac.redacted, true);
+    const x = disc.winProfile('My "Net" & Co', 'pa<ss>word1');
+    assert.ok(x.includes('My &quot;Net&quot; &amp; Co') && x.includes('pa&lt;ss&gt;word1') && x.includes('WPA2PSK'));
+    assert.ok(disc.winProfile('Open', '').includes('<authentication>open</authentication>'));
+  });
+
+  await t('Art-Net first-universe offset + BLE settings', () => {
+    const e = new Engine();
+    e.updateSettings({ artnetFirst: 5, bleFormat: 'PLAIN', bleUniverse: 2, bleFormat2: 'x' });
+    assert.strictEqual(e.settings.artnetFirst, 5); assert.strictEqual(e.settings.bleFormat, 'PLAIN'); assert.strictEqual(e.settings.bleUniverse, 2);
+    e.updateSettings({ bleFormat: 'junk' }); assert.strictEqual(e.settings.bleFormat, 'PLAIN');
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();

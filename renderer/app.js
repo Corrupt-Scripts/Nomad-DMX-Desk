@@ -346,21 +346,168 @@
   }
 
   // ------------------------------------------------------------------ output
-  function renderOutput() {
+  // Each card redraws on its own, so a scan finishing never wipes what you're typing in another card.
+  const net = { nodes: null, scanning: false };
+  const wifi = { list: null, scanning: false, note: '', msg: '', error: false, pickSsid: null, busy: false };
+  const bleUi = { unnamed: false };
+  const cards = {};
+
+  function mountCard(id, build) {
+    const c = el('div', { class: 'panel' });
+    cards[id] = { el: c, build };
+    c.replaceChildren(...build());
+    return c;
+  }
+  function refreshCard(id) {
+    const c = cards[id];
+    if (c && c.el.isConnected) c.el.replaceChildren(...c.build());
+  }
+
+  async function scanNodes() {
+    if (net.scanning) return;
+    net.scanning = true; refreshCard('net');
+    try { net.nodes = await window.desk.artnetScan(); } catch (e) { net.nodes = []; }
+    net.scanning = false; refreshCard('net');
+  }
+
+  async function useNode(n) {
+    const patch = { artnetDest: n.ip };
+    if (n.outputs.length) patch.artnetFirst = n.outputs[0];
+    if (show.settings.protocol !== 'artnet') patch.sacnUnicast = n.ip;
+    await call('updateSettings', patch);
+    refreshCard('net'); refreshCard('adv');
+  }
+
+  async function useBroadcast() {
+    await call('updateSettings', { artnetDest: '255.255.255.255', sacnUnicast: '' });
+    refreshCard('net'); refreshCard('adv');
+  }
+
+  function netCard() {
+    const s = show.settings;
+    const dest = s.artnetDest === '255.255.255.255' ? 'everyone on the network (broadcast)' : s.artnetDest;
+    const rows = (net.nodes || []).map((n) => el('tr', {},
+      el('td', {}, el('b', {}, n.shortName || n.longName || 'Art-Net node'), n.longName && n.longName !== n.shortName ? el('div', { class: 'hint' }, n.longName) : null),
+      el('td', {}, n.ip),
+      el('td', {}, n.outputs.length ? n.outputs.join(', ') : '–'),
+      el('td', {}, el('button', { class: s.artnetDest === n.ip ? 'primary' : '', onclick: () => useNode(n) }, s.artnetDest === n.ip ? 'In use' : 'Use'))));
+    let body;
+    if (net.nodes && net.nodes.length) {
+      body = el('table', {}, el('thead', {}, el('tr', {}, ['Node', 'Address', 'Art-Net universes', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows));
+    } else {
+      body = el('div', { class: 'hint' }, net.scanning ? 'Looking for Art-Net nodes…' : net.nodes ? 'No Art-Net nodes answered. Make sure this computer is on the same Wi-Fi or network as the box (join its Wi-Fi below), then scan again. Sending to everyone also works with most nodes.' : '');
+    }
+    return [
+      el('h3', {}, 'Lighting nodes on this network', el('span', { class: 'grow' }), el('button', { class: 'primary', disabled: net.scanning, onclick: scanNodes }, net.scanning ? 'Scanning…' : 'Scan')),
+      el('div', { class: 'hint', style: 'margin-bottom:8px' }, 'Sending to: ', el('b', {}, dest)),
+      body,
+      el('div', { class: 'row', style: 'margin-top:10px' }, el('button', { onclick: useBroadcast }, 'Send to everyone (broadcast)')),
+    ];
+  }
+
+  async function scanWifi() {
+    if (wifi.scanning) return;
+    wifi.scanning = true; wifi.msg = ''; refreshCard('wifi');
+    let r;
+    try { r = await window.desk.wifiScan(); } catch (e) { r = { ok: false, message: 'Could not scan Wi-Fi' }; }
+    wifi.scanning = false;
+    if (r.ok) { wifi.list = r.networks; wifi.note = r.note || ''; wifi.error = false; } else { wifi.list = wifi.list || []; wifi.msg = r.message; wifi.error = true; }
+    refreshCard('wifi');
+  }
+
+  async function joinWifi(ssid, password) {
+    wifi.busy = true; wifi.msg = `Joining ${ssid}…`; wifi.error = false; refreshCard('wifi');
+    let r;
+    try { r = await window.desk.wifiConnect(ssid, password); } catch (e) { r = { ok: false, message: 'Could not join' }; }
+    wifi.busy = false; wifi.pickSsid = null; wifi.msg = r.message; wifi.error = !r.ok;
+    refreshCard('wifi');
+    if (r.ok) setTimeout(() => { scanWifi(); scanNodes(); }, 6000);
+  }
+
+  function wifiCard() {
+    const rows = (wifi.list || []).map((n) => {
+      const picking = wifi.pickSsid === n.ssid;
+      const pw = picking ? el('input', { type: 'password', placeholder: 'Wi-Fi password', style: 'width:150px', onkeydown: (e) => { if (e.key === 'Enter') joinWifi(n.ssid, e.target.value); } }) : null;
+      return el('tr', {},
+        el('td', {}, n.ssid, n.current ? el('span', { class: 'pill ok', style: 'margin-left:6px' }, 'connected') : null,
+          /boulder|nomad|dmx|lumen/i.test(n.ssid) ? el('span', { class: 'pill', style: 'margin-left:6px' }, 'lighting?') : null),
+        el('td', {}, n.security === 'open' ? 'Open' : 'Secured'),
+        el('td', {}, `${n.signal}%`),
+        el('td', { style: 'white-space:nowrap' }, picking
+          ? [pw, el('button', { class: 'primary', onclick: (e) => joinWifi(n.ssid, e.target.parentNode.querySelector('input').value) }, 'Join'), el('button', { onclick: () => { wifi.pickSsid = null; refreshCard('wifi'); } }, 'Cancel')]
+          : el('button', { disabled: wifi.busy, onclick: () => { if (n.security === 'open') joinWifi(n.ssid, ''); else { wifi.pickSsid = n.ssid; refreshCard('wifi'); } } }, 'Join')));
+    });
+    return [
+      el('h3', {}, 'Wi-Fi networks', el('span', { class: 'grow' }),
+        el('button', { onclick: () => window.desk.wifiSettings() }, 'Wi-Fi settings'),
+        el('button', { class: 'primary', disabled: wifi.scanning || wifi.busy, onclick: scanWifi }, wifi.scanning ? 'Scanning…' : 'Scan')),
+      wifi.msg ? el('div', { class: wifi.error ? 'err-text' : 'hint', style: 'margin-bottom:8px' }, wifi.msg) : null,
+      wifi.list && wifi.list.length
+        ? el('table', {}, el('thead', {}, el('tr', {}, ['Network', 'Security', 'Signal', ''].map((h) => el('th', {}, h)))), el('tbody', {}, rows))
+        : el('div', { class: 'hint' }, wifi.scanning ? 'Scanning for Wi-Fi networks…' : 'No networks listed yet.'),
+      wifi.note ? el('div', { class: 'hint', style: 'margin-top:6px' }, wifi.note) : null,
+      el('div', { class: 'hint', style: 'margin-top:8px' }, 'Joining a lighting box’s own Wi-Fi can cut this computer off from the internet while it is connected.'),
+    ].filter(Boolean);
+  }
+
+  function bleCard() {
+    const s = show.settings;
+    const B = window.BLE;
+    if (!B || !B.supported) {
+      return [el('h3', {}, 'Bluetooth'), el('div', { class: 'hint' }, 'Bluetooth is not available on this computer, or it is switched off.')];
+    }
+    const head = el('h3', {}, 'Bluetooth', el('span', { class: 'grow' }),
+      B.connected ? el('button', { onclick: () => B.disconnect() }, 'Disconnect')
+        : B.scanning ? el('button', { onclick: () => B.cancel() }, 'Cancel')
+          : el('button', { class: 'primary', onclick: () => B.scan() }, 'Scan'));
+    const out = [head];
+    const ok = B.connected && B.ready;
+    out.push(el('div', { class: ok ? '' : 'hint', style: 'margin-bottom:8px' }, ok ? el('span', {}, el('b', {}, B.name), ` – connected (${B.mode === 'dmxcat' ? 'DMXcat' : 'DMX adapter'})`) : B.status));
+    if (B.scanning) {
+      const all = B.devices.slice();
+      const named = all.filter((d) => d.name);
+      const unnamed = all.filter((d) => !d.name);
+      named.sort((a, b) => (/boulder|nomad|dmx|lumen|cat/i.test(b.name) ? 1 : 0) - (/boulder|nomad|dmx|lumen|cat/i.test(a.name) ? 1 : 0) || a.name.localeCompare(b.name));
+      const list = named.concat(bleUi.unnamed ? unnamed : []);
+      out.push(list.length
+        ? el('table', {}, el('tbody', {}, list.map((d) => el('tr', {},
+          el('td', {}, d.name || 'Unnamed device', /boulder|nomad|dmx|lumen|cat/i.test(d.name) ? el('span', { class: 'pill', style: 'margin-left:6px' }, 'lighting?') : null),
+          el('td', {}, el('button', { class: 'primary', onclick: () => B.choose(d.id) }, 'Connect'))))))
+        : el('div', { class: 'hint' }, 'Searching for nearby Bluetooth devices… make sure the receiver is powered on.'));
+      out.push(el('label', { class: 'hint', style: 'display:flex;gap:6px;margin-top:8px;align-items:center' },
+        el('input', { type: 'checkbox', checked: bleUi.unnamed, onchange: (e) => { bleUi.unnamed = e.target.checked; refreshCard('ble'); } }),
+        `Show unnamed devices (${unnamed.length})`));
+    }
+    out.push(el('div', { class: 'form', style: 'grid-template-columns:170px 1fr;margin-top:12px' },
+      el('label', {}, 'Universe sent'), el('input', { type: 'number', min: 1, max: 16, value: s.bleUniverse, onchange: (e) => call('updateSettings', { bleUniverse: e.target.value }) }),
+      el('label', {}, 'Packet format'), el('select', { value: s.bleFormat, onchange: (e) => call('updateSettings', { bleFormat: e.target.value }) },
+        [['OFFSET', 'Offset (Nomad / Boulders receivers)'], ['PLAIN', 'Plain 513-byte stream']].map(([v, n]) => el('option', { value: v }, n)))));
+    out.push(el('div', { class: 'hint', style: 'margin-top:8px' }, 'Bluetooth carries one universe and runs alongside the network output.'));
+    return out;
+  }
+
+  function advCard() {
     const s = show.settings;
     const field = (label, input, hint) => [el('label', {}, label), el('div', {}, input, hint ? el('div', { class: 'hint' }, hint) : null)];
     const set = (k) => (e) => call('updateSettings', { [k]: e.target.value });
-    $('#view').replaceChildren(el('div', { class: 'panel', style: 'max-width:680px' }, el('h3', {}, 'DMX output'),
+    return [el('h3', {}, 'Network output settings'),
       el('div', { class: 'form', style: 'grid-template-columns:150px 1fr' },
         ...field('Protocol', el('select', { value: s.protocol, onchange: set('protocol') }, [['artnet', 'Art-Net'], ['sacn', 'sACN (E1.31)'], ['both', 'Art-Net + sACN']].map(([v, n]) => el('option', { value: v }, n)))),
         ...field('Universes', el('input', { type: 'number', min: 1, max: 16, value: s.universes, onchange: set('universes') }), 'How many universes to output (512 channels each).'),
-        ...field('Art-Net destination', el('input', { type: 'text', value: s.artnetDest, onchange: set('artnetDest') }), 'Broadcast (255.255.255.255) or the unicast IP of your node, e.g. a Boulder Box at 192.168.4.1.'),
-        ...field('Art-Net numbering', el('select', { value: String(s.artnetFirst), onchange: set('artnetFirst') }, [['0', 'Desk universe 1 = Art-Net universe 0'], ['1', 'Desk universe 1 = Art-Net universe 1']].map(([v, n]) => el('option', { value: v }, n))), 'Change this if your node expects a different base.'),
+        ...field('Art-Net destination', el('input', { type: 'text', value: s.artnetDest, onchange: (e) => { call('updateSettings', { artnetDest: e.target.value }).then(() => refreshCard('net')); } }), 'Filled in for you when you pick a node above. 255.255.255.255 = everyone.'),
+        ...field('First Art-Net universe', el('input', { type: 'number', min: 0, max: 32000, value: s.artnetFirst, onchange: set('artnetFirst') }), 'The Art-Net universe number desk universe 1 sends to (usually 0, or 1 on some nodes).'),
         ...field('sACN unicast IP', el('input', { type: 'text', value: s.sacnUnicast, placeholder: '(blank = multicast)', onchange: set('sacnUnicast') })),
         ...field('sACN priority', el('input', { type: 'number', min: 0, max: 200, value: s.sacnPriority, onchange: set('sacnPriority') })),
         ...field('Send from interface', el('input', { type: 'text', value: s.bindIp, placeholder: '(automatic)', onchange: set('bindIp') }), 'Optional: this computer’s IP on the lighting network (useful with several adapters).'),
         ...field('Refresh rate', el('input', { type: 'number', min: 1, max: 44, value: s.fps, onchange: set('fps') }), 'Frames per second (30 is typical, 44 max).')),
-      el('div', { class: 'hint', style: 'margin-top:14px' }, 'Show files: File menu → Save as… / Open…. The current show also auto-saves and reopens next launch.')));
+      el('div', { class: 'hint', style: 'margin-top:14px' }, 'Show files: File menu → Save as… / Open…. The current show also auto-saves and reopens next launch.')];
+  }
+
+  function renderOutput() {
+    $('#view').replaceChildren(el('div', { class: 'stack', style: 'max-width:780px' },
+      mountCard('net', netCard), mountCard('wifi', wifiCard), mountCard('ble', bleCard), mountCard('adv', advCard)));
+    if (net.nodes == null && !net.scanning) scanNodes();
+    if (wifi.list == null && !wifi.scanning) scanWifi();
   }
 
   // --------------------------------------------------------------- rendering
@@ -467,6 +614,7 @@
       el('span', {}, `${proto} → ${dest}`), el('span', {}, `${s.universes} universe${s.universes > 1 ? 's' : ''} @ ${s.fps} fps`),
       el('span', {}, `${live.status.packets} packets`),
       live.status.lastError ? el('span', { class: 'err-text' }, live.status.lastError) : null,
+      window.BLE && window.BLE.connected && window.BLE.ready ? el('span', {}, `Bluetooth: ${window.BLE.name}`) : null,
       live.status.fading ? el('span', {}, 'fading…') : null,
     ].filter(Boolean));
   }
@@ -518,7 +666,11 @@
       renderCueBar(); renderMaster();
       if (changed) renderView(false);
     });
-    window.desk.onLive((l) => { live = l; updateLive(); });
+    window.desk.onLive((l) => {
+      live = l; updateLive();
+      if (window.BLE && window.BLE.connected && window.BLE.ready) window.BLE.send(l.out[(show.settings.bleUniverse || 1) - 1], show.settings.bleFormat);
+    });
+    if (window.BLE) window.BLE.onChange = () => { refreshCard('ble'); updateLive(); };
     show = await window.desk.api('getShow');
     renderTabs(); renderCueBar(); renderMaster(); renderView(true);
   }
