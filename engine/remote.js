@@ -9,7 +9,7 @@ const crypto = require('crypto');
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json' };
 // Things a remote screen may not do: change where the DMX goes, or touch the computer.
-const REMOTE_BLOCKED = new Set(['updateSettings']);
+const REMOTE_BLOCKED = new Set(['updateSettings', 'swapProtocols']);
 
 const loginPage = (msg) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nomad DMX Desk</title>
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0e0b14;color:#e9e4f5;font:16px system-ui,sans-serif}

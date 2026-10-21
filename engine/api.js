@@ -5,7 +5,7 @@ const ALLOWED = new Set([
   'clearProgrammer', 'clearAll', 'setMaster', 'setBlackout', 'go', 'back', 'goto', 'stop', 'release',
   'recordCue', 'updateCue', 'deleteCue', 'goIndex', 'addEffect', 'updateEffect', 'removeEffect',
   'setLayoutImage', 'getLayoutImage', 'setLayoutPositions', 'removeLayoutPositions', 'layoutAuto', 'addShape', 'updateShape', 'removeShape', 'moveShape', 'clearShapes', 'setLayoutOptions',
-  'addFixtures', 'updateFixture', 'removeFixture', 'saveProfile', 'deleteProfile', 'updateSettings',
+  'addFixtures', 'updateFixture', 'removeFixture', 'saveProfile', 'deleteProfile', 'updateSettings', 'swapProtocols',
 ]);
 
 module.exports = { ALLOWED };

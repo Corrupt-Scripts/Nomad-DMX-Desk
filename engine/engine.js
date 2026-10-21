@@ -24,7 +24,25 @@ function defaultSettings() {
     bleUniverse: 1,           // which desk universe goes out over Bluetooth
     artnetPort: 6454,
     sacnPort: 5568,
+    routes: [],               // per desk universe: { proto, number, dest } overrides (see normaliseRoutes)
   };
+}
+
+const ROUTE_PROTOS = ['default', 'artnet', 'sacn', 'both', 'off'];
+// A desk universe is virtual: each one can be sent as Art-Net, sACN, both or nothing, to its own
+// wire universe number and its own address, falling back to the global settings where left blank.
+function normaliseRoutes(list) {
+  const out = [];
+  for (let i = 0; i < MAX_UNIVERSES; i++) {
+    const r = (Array.isArray(list) && list[i]) || {};
+    const n = r.number === '' || r.number == null ? null : parseInt(r.number, 10);
+    out.push({
+      proto: ROUTE_PROTOS.includes(r.proto) ? r.proto : 'default',
+      number: Number.isFinite(n) ? clamp(n, 0, 63999) : null,
+      dest: String(r.dest == null ? '' : r.dest).trim().slice(0, 64),
+    });
+  }
+  return out;
 }
 
 const emptyLayout = () => ({ bg: null, bgVersion: 0, aspect: 16 / 9, pos: {}, shapes: [], labels: { name: true, addr: true, size: 11 } });
@@ -588,13 +606,19 @@ class Engine {
     frame.forEach((data, i) => {
       const u = i + 1;
       this.seq[u] = (this.seq[u] % 255) + 1;
-      if (s.protocol === 'artnet' || s.protocol === 'both') {
-        const pkt = artnetPacket(u - 1 + (parseInt(s.artnetFirst, 10) || 0), this.seq[u], data);
-        try { sock.send(pkt, s.artnetPort, s.artnetDest || '255.255.255.255', done); } catch (e) { this.stats.lastError = e.message; }
+      const r = (s.routes && s.routes[i]) || {};
+      const proto = r.proto && r.proto !== 'default' ? r.proto : s.protocol;
+      if (proto === 'off') return;
+      const hasNum = r.number != null && r.number !== '';
+      if (proto === 'artnet' || proto === 'both') {
+        const wire = hasNum ? r.number : u - 1 + (parseInt(s.artnetFirst, 10) || 0);
+        const pkt = artnetPacket(wire, this.seq[u], data);
+        try { sock.send(pkt, s.artnetPort, r.dest || s.artnetDest || '255.255.255.255', done); } catch (e) { this.stats.lastError = e.message; }
       }
-      if (s.protocol === 'sacn' || s.protocol === 'both') {
-        const pkt = sacnPacket(u, this.seq[u], data, s.sacnPriority, this.showName);
-        const dest = s.sacnUnicast || sacnMulticastAddr(u);
+      if (proto === 'sacn' || proto === 'both') {
+        const wire = hasNum ? Math.max(1, r.number) : u;
+        const pkt = sacnPacket(wire, this.seq[u], data, s.sacnPriority, this.showName);
+        const dest = r.dest || s.sacnUnicast || sacnMulticastAddr(wire);
         try { sock.send(pkt, s.sacnPort, dest, done); } catch (e) { this.stats.lastError = e.message; }
       }
     });
@@ -627,9 +651,21 @@ class Engine {
       s.universes = clamp(parseInt(patch.universes, 10) || 1, 1, MAX_UNIVERSES);
       if (this.currentUniverse > s.universes) this.currentUniverse = s.universes;
     }
+    if (patch.routes != null) s.routes = normaliseRoutes(patch.routes);
     if (patch.fps != null) { s.fps = clamp(parseInt(patch.fps, 10) || 30, 1, 44); if (this.timer && this._onFrame) this.start(this._onFrame); }
     this.resetSocket();
     this.changed();
+  }
+
+  // One press: everything that was Art-Net becomes sACN and the other way round ("both" stays both).
+  swapProtocols() {
+    const flip = (p) => (p === 'artnet' ? 'sacn' : p === 'sacn' ? 'artnet' : p);
+    const s = this.settings;
+    s.protocol = flip(s.protocol);
+    s.routes = normaliseRoutes(s.routes).map((r) => Object.assign({}, r, { proto: flip(r.proto) }));
+    this.resetSocket();
+    this.changed();
+    return s.protocol;
   }
 
   // ----------------------------------------------------------------- commands

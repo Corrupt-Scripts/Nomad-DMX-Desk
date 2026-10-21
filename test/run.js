@@ -403,6 +403,33 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     e.setLayoutImage(null); assert.strictEqual(e.getShow().layout.hasBg, false);
   });
 
+  await t('universe routing: per-universe protocol, number, destination, swap', async () => {
+    const e = new Engine();
+    e.updateSettings({ universes: 3, protocol: 'artnet', artnetDest: '10.0.0.5', artnetFirst: 0, sacnUnicast: '10.0.0.6' });
+    e.updateSettings({ routes: [{ proto: 'sacn' }, { proto: 'both', number: 7, dest: '10.0.0.9' }, { proto: 'off' }] });
+    assert.strictEqual(e.settings.routes.length, 16);
+    const sent = [];
+    e.ensureSocket = () => ({ send: (pkt, port, host, cb) => { sent.push({ pkt, port, host }); cb(); } });
+    const frame = [new Uint8Array(512), new Uint8Array(512), new Uint8Array(512)];
+    e.sendFrame(frame);
+    const kinds = sent.map((x) => (x.pkt.toString('ascii', 0, 7) === 'Art-Net' ? 'A' : 'S') + ':' + x.host + ':' + x.port);
+    assert.deepStrictEqual(kinds, ['S:10.0.0.6:5568', 'A:10.0.0.9:6454', 'S:10.0.0.9:5568'], 'universe 1 sACN to unicast, universe 2 both to its own address, universe 3 off');
+    assert.strictEqual(sent[1].pkt.readUInt16LE(14), 7, 'art-net wire universe 7');
+    assert.strictEqual(sent[0].pkt.readUInt16BE(113), 1, 'sacn wire universe 1');
+    assert.strictEqual(sent[2].pkt.readUInt16BE(113), 7, 'sacn wire universe 7');
+    assert.strictEqual(e.swapProtocols(), 'sacn');
+    assert.strictEqual(e.settings.routes[0].proto, 'artnet'); assert.strictEqual(e.settings.routes[1].proto, 'both'); assert.strictEqual(e.settings.routes[2].proto, 'off');
+    sent.length = 0; e.sendFrame(frame);
+    assert.strictEqual(sent[0].pkt.toString('ascii', 0, 7), 'Art-Net');
+    e.updateSettings({ routes: [{ proto: 'bogus', number: 'x', dest: ' a ' }] });
+    assert.deepStrictEqual(e.settings.routes[0], { proto: 'default', number: null, dest: 'a' });
+    const back = new Engine(); back.load(JSON.parse(JSON.stringify(e.serialize())));
+    assert.strictEqual(back.settings.routes.length, 16);
+    const old = new Engine(); old.load({ format: 'nomad-dmx-desk', version: 1, settings: { protocol: 'sacn' } });
+    e.settings.routes = old.settings.routes; sent.length = 0; old.ensureSocket = e.ensureSocket; old.sendFrame([new Uint8Array(512)]);
+    assert.strictEqual(sent[0].host, '239.255.0.1', 'shows saved before routing existed still send as before');
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();

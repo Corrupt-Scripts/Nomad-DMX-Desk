@@ -856,6 +856,30 @@
     return out;
   }
 
+  function routeCard() {
+    const s = show.settings;
+    const routes = Array.from({ length: 16 }, (_, i) => Object.assign({ proto: 'default', number: null, dest: '' }, (s.routes || [])[i] || {}));
+    const save = (i, patch) => { routes[i] = Object.assign({}, routes[i], patch); return call('updateSettings', { routes }); };
+    const label = { artnet: 'Art-Net', sacn: 'sACN', both: 'both', default: 'default', off: 'off' };
+    const rows = Array.from({ length: s.universes }, (_, i) => {
+      const r = routes[i];
+      const eff = r.proto === 'default' ? s.protocol : r.proto;
+      const autoNum = eff === 'sacn' ? i + 1 : i + (parseInt(s.artnetFirst, 10) || 0);
+      return el('tr', {},
+        el('td', {}, `Desk ${i + 1}`),
+        el('td', {}, el('select', { value: r.proto, onchange: (e) => save(i, { proto: e.target.value }) },
+          [['default', `Default (${label[s.protocol]})`], ['artnet', 'Art-Net'], ['sacn', 'sACN'], ['both', 'Art-Net + sACN'], ['off', 'Off']].map(([v, n]) => el('option', { value: v }, n)))),
+        el('td', {}, el('input', { class: 'n', type: 'number', min: 0, max: 63999, value: r.number == null ? '' : r.number, placeholder: String(autoNum), onchange: (e) => save(i, { number: e.target.value }) })),
+        el('td', {}, el('input', { type: 'text', value: r.dest, placeholder: '(default)', onchange: (e) => save(i, { dest: e.target.value }) })));
+    });
+    return [
+      el('h3', {}, 'Universe routing', el('span', { class: 'grow' }),
+        el('button', { class: 'primary', title: 'Everything that is Art-Net becomes sACN, and the other way round', onclick: async () => { const r = await call('swapProtocols'); if (r && r.ok) setFeedback(`Now sending ${r.result === 'sacn' ? 'sACN' : 'Art-Net'} by default`); } }, 'Swap Art-Net ⇄ sACN')),
+      el('div', { class: 'hint', style: 'margin-bottom:8px' }, 'Desk universes are virtual. Send each one as Art-Net or sACN, to any universe number and any address. Blank fields use the settings below.'),
+      el('table', {}, el('thead', {}, el('tr', {}, ['Desk universe', 'Send as', 'Universe no.', 'Send to'].map((h) => el('th', {}, h)))), el('tbody', {}, rows)),
+    ];
+  }
+
   function advCard() {
     const s = show.settings;
     const field = (label, input, hint) => [el('label', {}, label), el('div', {}, input, hint ? el('div', { class: 'hint' }, hint) : null)];
@@ -907,12 +931,12 @@
         el('div', { class: 'panel' }, el('h3', {}, 'iPad'),
           el('div', { class: 'hint' }, 'Keep this app open on screen while the lights are running: iPadOS pauses apps in the background, which stops the DMX. The iPad is kept awake while the app is open.'),
           el('div', { class: 'hint', style: 'margin-top:6px' }, 'Wi-Fi is chosen in the iPad Settings app. sACN multicast is not available on iPad (Apple restricts it), so use Art-Net or sACN to a node\'s address.')),
-        mountCard('net', netCard), mountCard('ble', bleCard), mountCard('adv', advCard)));
+        mountCard('net', netCard), mountCard('route', routeCard), mountCard('ble', bleCard), mountCard('adv', advCard)));
       if (net.nodes == null && !net.scanning) scanNodes();
       return;
     }
     $('#view').replaceChildren(el('div', { class: 'stack', style: 'max-width:780px' },
-      mountCard('net', netCard), mountCard('wifi', wifiCard), mountCard('ble', bleCard), remoteCard(), mountCard('adv', advCard)));
+      mountCard('net', netCard), mountCard('wifi', wifiCard), mountCard('route', routeCard), mountCard('ble', bleCard), remoteCard(), mountCard('adv', advCard)));
     if (net.nodes == null && !net.scanning) scanNodes();
     if (wifi.list == null && !wifi.scanning) scanWifi();
   }
