@@ -1,0 +1,39 @@
+{
+  "name": "nomad-dmx-desk",
+  "version": "0.1.0",
+  "description": "Cross-platform DMX lighting desk (Art-Net / sACN) for Windows and macOS",
+  "main": "main.js",
+  "author": "Corrupt Scripts",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/run.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "uk.corruptscripts.nomaddmxdesk",
+    "productName": "Nomad DMX Desk",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "engine/**", "renderer/**", "package.json"],
+    "mac": {
+      "category": "public.app-category.video",
+      "identity": null,
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }]
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+  }
+}

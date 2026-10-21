@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nomad DMX Desk</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="top">
+    <div class="brand">NOMAD <span>DMX DESK</span></div>
+    <nav id="tabs"></nav>
+    <div class="spacer"></div>
+    <div id="cuebar"></div>
+    <div class="master">
+      <label>GRAND MASTER</label>
+      <input id="gm" type="range" min="0" max="100" value="100">
+      <span id="gmval">100%</span>
+    </div>
+    <button id="bo" class="bo">BLACKOUT</button>
+  </header>
+  <main id="view"></main>
+  <footer id="cmdbar">
+    <div id="cmdfeedback"></div>
+    <div class="cmdrow">
+      <span class="prompt">&gt;</span>
+      <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="1 thru 10 @ 50   |   fix 1 thru 4   |   colour red   |   record cue 1   |   go">
+    </div>
+    <div id="statusline"></div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
