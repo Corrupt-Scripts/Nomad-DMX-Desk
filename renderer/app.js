@@ -822,6 +822,7 @@
     ].filter(Boolean);
   }
 
+  const field0 = (x) => x;
   function bleCard() {
     const s = show.settings;
     const B = window.BLE;
@@ -834,7 +835,7 @@
           : el('button', { class: 'primary', onclick: () => B.scan() }, 'Scan'));
     const out = [head];
     const ok = B.connected && B.ready;
-    out.push(el('div', { class: ok ? '' : 'hint', style: 'margin-bottom:8px' }, ok ? el('span', {}, el('b', {}, B.name), ` – connected (${B.mode === 'dmxcat' ? 'DMXcat' : 'DMX adapter'})`) : B.status));
+    out.push(el('div', { class: ok ? '' : 'hint', style: 'margin-bottom:8px' }, ok ? el('span', {}, el('b', {}, B.name), ` – connected (${B.mode === 'dmxcat' ? 'DMXcat' : B.mode === 'astera' ? 'Astera tubes' : 'DMX adapter'}${B.mode === 'astera' && B.ast && B.ast.battery != null ? `, bridge battery ${B.ast.battery}%` : ''})`) : B.status));
     if (B.scanning) {
       const all = B.devices.slice();
       const named = all.filter((d) => d.name);
@@ -854,7 +855,10 @@
       el('label', {}, 'Universe sent'), el('input', { type: 'number', min: 1, max: 16, value: s.bleUniverse, onchange: (e) => call('updateSettings', { bleUniverse: e.target.value }) }),
       el('label', {}, 'Packet format'), el('select', { value: s.bleFormat, onchange: (e) => call('updateSettings', { bleFormat: e.target.value }) },
         [['OFFSET', 'Offset (Nomad / Boulders receivers)'], ['PLAIN', 'Plain 513-byte stream']].map(([v, n]) => el('option', { value: v }, n)))));
-    out.push(el('div', { class: 'hint', style: 'margin-top:8px' }, 'Bluetooth carries one universe and runs alongside the network output.'));
+    out.push(el('div', { class: 'form', style: 'grid-template-columns:170px 1fr;margin-top:8px' },
+      el('label', {}, 'Astera radio PIN'), field0(el('input', { type: 'number', min: 0, max: 99999999, value: s.asteraPin, onchange: (e) => call('updateSettings', { asteraPin: e.target.value }) })),
+      el('label', {}, 'Astera fixture address'), el('input', { type: 'number', min: 1, max: 507, value: s.asteraAddress, onchange: (e) => call('updateSettings', { asteraAddress: e.target.value }) })));
+    out.push(el('div', { class: 'hint', style: 'margin-top:8px' }, 'Bluetooth carries one universe and runs alongside the network output. Astera tubes (Titan, Helios, Hyperion): connect to one tube with a Bluetooth bridge, enter the same radio PIN the tubes use (0 = none), then patch one "Astera tube (Bluetooth, all tubes)" fixture at that address. It drives every tube on the PIN: dimmer, colour, and the Effect channel (10-39 Wedding, 40-69 Slow Movements, 70-99 Rainbow, 100-129 Fire, 130-159 Ice, 160-189 Garden, 190-219 Blue Pulse, 220+ Colorful; Speed 0 = normal).'));
     return out;
   }
 
@@ -1104,11 +1108,13 @@
     window.desk.onShow((s) => {
       const changed = !show || viewSig(s) !== ui.sig;
       show = s;
+      if (window.BLE) window.BLE.cfg = s.settings;
       renderCueBar(); renderMaster();
       if (changed) renderView(false);
     });
     window.desk.onLive((l) => {
       live = l; updateLive();
+      if (window.BLE) window.BLE.cfg = show.settings;
       if (window.BLE && window.BLE.connected && window.BLE.ready) window.BLE.send(l.out[(show.settings.bleUniverse || 1) - 1], show.settings.bleFormat);
     });
     if (window.BLE) window.BLE.onChange = () => { refreshCard('ble'); updateLive(); };

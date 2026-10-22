@@ -9,13 +9,22 @@ const dv = (v) => new DataView(v.buffer, v.byteOffset, v.byteLength);
 
 class Characteristic {
   constructor(deviceId, svc, c) {
-    this.deviceId = deviceId; this.svc = svc; this.uuid = lower(c.uuid);
+    this.deviceId = deviceId; this.svc = svc; this.uuid = lower(c.uuid); this.listeners = {}; this.value = null;
     const p = c.properties || {};
     this.properties = { read: !!p.read, write: !!p.write, writeWithoutResponse: !!p.writeWithoutResponse, notify: !!p.notify, indicate: !!p.indicate };
   }
   async writeValueWithResponse(v) { await BleClient.write(this.deviceId, this.svc, this.uuid, dv(Uint8Array.from(v))); }
   async writeValue(v) { await this.writeValueWithResponse(v); }
   async writeValueWithoutResponse(v) { await BleClient.writeWithoutResponse(this.deviceId, this.svc, this.uuid, dv(Uint8Array.from(v))); }
+  async readValue() { this.value = await BleClient.read(this.deviceId, this.svc, this.uuid); return this.value; }
+  addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
+  async startNotifications() {
+    await BleClient.startNotifications(this.deviceId, this.svc, this.uuid, (v) => {
+      this.value = v; (this.listeners.characteristicvaluechanged || []).forEach((fn) => fn({ target: this }));
+    });
+    return this;
+  }
+  async stopNotifications() { await BleClient.stopNotifications(this.deviceId, this.svc, this.uuid); return this; }
 }
 
 class Service {

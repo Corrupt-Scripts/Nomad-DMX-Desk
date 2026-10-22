@@ -149,6 +149,14 @@ function createWindow() {
     bleCallback = callback;
     if (win && !win.isDestroyed()) win.webContents.send('ble:devices', devices.map((d) => ({ id: d.deviceId, name: d.deviceName || '' })));
   });
+  // Some Bluetooth devices (Astera tubes) must be paired first. The user already picked the device, so accept
+  // the "Just Works" pairing; the operating system shows its own prompt where it needs one.
+  try {
+    win.webContents.session.setBluetoothPairingHandler((details, callback) => {
+      if (details.pairingKind === 'confirm') callback({ confirmed: true });
+      else callback({ confirmed: false });
+    });
+  } catch (e) { /* not supported on this platform */ }
   win.on('closed', () => { win = null; });
 }
 

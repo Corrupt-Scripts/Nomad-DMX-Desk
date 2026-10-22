@@ -20,6 +20,7 @@ const BUILTIN_PROFILES = [
   { id: 'b-cct', name: 'Film: Dimmer + CCT', builtin: true, channels: [ch('Intensity', 'dimmer'), ch('CCT', 'cct')] },
   { id: 'b-cct-tint', name: 'Film: Dimmer + CCT + Tint (+/- green)', builtin: true, channels: [ch('Intensity', 'dimmer'), ch('CCT', 'cct'), ch('Tint', 'tint')] },
   { id: 'b-cct-rgb', name: 'Film: Dimmer + CCT + Tint + RGB', builtin: true, channels: [ch('Intensity', 'dimmer'), ch('CCT', 'cct'), ch('Tint', 'tint'), ch('Red', 'red'), ch('Green', 'green'), ch('Blue', 'blue')] },
+  { id: 'b-astera-bt', name: 'Astera tube (Bluetooth, all tubes)', builtin: true, channels: [ch('Dimmer', 'dimmer'), ch('Red', 'red'), ch('Green', 'green'), ch('Blue', 'blue'), ch('Effect', 'other'), ch('Effect speed', 'other')] },
   { id: 'b-pantilt', name: 'Dimmer + Pan/Tilt', builtin: true, channels: [ch('Pan', 'pan'), ch('Tilt', 'tilt'), ch('Dimmer', 'dimmer')] },
 ];
 

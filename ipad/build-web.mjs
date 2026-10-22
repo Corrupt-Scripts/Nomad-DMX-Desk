@@ -25,7 +25,7 @@ await build({
   logLevel: 'warning',
 });
 
-for (const f of ['style.css', 'app.js', 'ble.js']) fs.copyFileSync(path.join(renderer, f), path.join(www, f));
+for (const f of ['style.css', 'app.js', 'astera.js', 'ble.js']) fs.copyFileSync(path.join(renderer, f), path.join(www, f));
 let html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
 if (!html.includes('<script src="remote-shim.js"></script>')) throw new Error('index.html changed: cannot swap the shim for the shell');
 html = html.replace('<script src="remote-shim.js"></script>', '<script src="shell.js"></script>');

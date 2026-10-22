@@ -22,6 +22,8 @@ function defaultSettings() {
     fps: 30,
     bleFormat: 'OFFSET',      // Bluetooth packet format: OFFSET (2-byte offset + 18 data) or PLAIN
     bleUniverse: 1,           // which desk universe goes out over Bluetooth
+    asteraAddress: 1,         // DMX address of the "Astera tube (Bluetooth)" fixture that drives Astera tubes
+    asteraPin: 0,             // Astera radio / master PIN (0 = none)
     artnetPort: 6454,
     sacnPort: 5568,
     routes: [],               // per desk universe: { proto, number, dest } overrides (see normaliseRoutes)
@@ -643,6 +645,8 @@ class Engine {
     if (patch.artnetDest != null) s.artnetDest = String(patch.artnetDest).trim() || '255.255.255.255';
     if (patch.artnetFirst != null) s.artnetFirst = clamp(parseInt(patch.artnetFirst, 10) || 0, 0, 32000);
     if (patch.bleFormat != null && ['OFFSET', 'PLAIN'].includes(patch.bleFormat)) s.bleFormat = patch.bleFormat;
+    if (patch.asteraAddress != null) s.asteraAddress = clamp(parseInt(patch.asteraAddress, 10) || 1, 1, 507);
+    if (patch.asteraPin != null) s.asteraPin = clamp(parseInt(patch.asteraPin, 10) || 0, 0, 99999999);
     if (patch.bleUniverse != null) s.bleUniverse = clamp(parseInt(patch.bleUniverse, 10) || 1, 1, MAX_UNIVERSES);
     if (patch.sacnUnicast != null) s.sacnUnicast = String(patch.sacnUnicast).trim();
     if (patch.sacnPriority != null) s.sacnPriority = clamp(parseInt(patch.sacnPriority, 10) || 100, 0, 200);

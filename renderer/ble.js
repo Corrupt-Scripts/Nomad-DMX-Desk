@@ -18,6 +18,8 @@ window.BLE = (() => {
     '2456e1b9-26e2-8f83-e744-f34f01e9d701', // u-blox
     '00035b03-58e6-07dd-021a-08123a000300', // Microchip MLDP
   ];
+  const ASTERA_SVC = '0a6c6c72-9ca6-ffaf-3440-b2dae8c86a65'; // Astera tubes (see astera.js)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const dcu = (s) => `c171${s}-8000-0010-8000-00805f9bc171`;
 
   const B = {
@@ -28,13 +30,14 @@ window.BLE = (() => {
     status: 'Not connected', name: '',
     onChange: () => {},
     last: new Int16Array(512).fill(-1), lastSent: null, lastSentAt: 0,
+    cfg: {}, ast: null,
 
     async scan() {
       if (!this.supported) { this.status = 'Bluetooth is not available on this computer'; this.onChange(); return; }
       if (this.scanning) return;
       this.scanning = true; this.devices = []; this.status = 'Searching…'; this.onChange();
       try {
-        const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [DMXCAT_SVC, DMXCAT_CTL_SVC, ...KNOWN_SERVICES] });
+        const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [DMXCAT_SVC, DMXCAT_CTL_SVC, ASTERA_SVC, ...KNOWN_SERVICES] });
         this.scanning = false; this.onChange();
         await this.open(dev);
       } catch (e) {
@@ -55,8 +58,9 @@ window.BLE = (() => {
       this.server = await device.gatt.connect();
       await this.discover();
     },
-    onDisconnected() { this.connected = false; this.ready = false; this.status = 'Disconnected'; this.onChange(); },
+    onDisconnected() { this.stopAstera(); this.connected = false; this.ready = false; this.status = 'Disconnected'; this.onChange(); },
     disconnect() {
+      this.stopAstera();
       try { if (this.device && this.device.gatt.connected) this.device.gatt.disconnect(); } catch (e) { /* ignore */ }
       this.connected = false; this.ready = false; this.mode = 'none'; this.status = 'Not connected'; this.onChange();
     },
@@ -64,6 +68,8 @@ window.BLE = (() => {
     async discover() {
       let svcs = [];
       try { svcs = await this.server.getPrimaryServices(); } catch (e) { /* none present */ }
+      const ast = window.ASTERA && (svcs.find((s) => s.uuid === ASTERA_SVC) || await this.findService(ASTERA_SVC));
+      if (ast) { await this.startAstera(ast); return; }
       const cat = svcs.find((s) => s.uuid === DMXCAT_SVC) || await this.findService(DMXCAT_SVC);
       if (cat) { await this.startDmxcat(cat); return; }
       for (const id of KNOWN_SERVICES) {
@@ -146,9 +152,75 @@ window.BLE = (() => {
       }
     },
 
+
+    // Astera tubes: colour, brightness and built-in effects for every tube on the radio PIN, through
+    // the one tube/AsteraBox we are connected to. Read the protocol notes in astera.js.
+    async startAstera(svc) {
+      const A = window.ASTERA;
+      this.mode = 'astera'; this.ready = false; this.connected = true; this.status = 'Astera found – setting up…'; this.onChange();
+      const wr = await svc.getCharacteristic(A.UUID.write);
+      const nf = await svc.getCharacteristic(A.UUID.notify);
+      let inf = null; try { inf = await svc.getCharacteristic(A.UUID.info); } catch (e) { /* optional */ }
+      const st = { wr, nf, parser: new A.Parser(), ctl: new A.Controller(), battery: null, fw: '', rxAt: 0, timers: [], chain: Promise.resolve(), dead: false };
+      this.ast = st;
+      nf.addEventListener('characteristicvaluechanged', (e) => this.asteraRx(st, e.target.value));
+      await nf.startNotifications();
+      if (inf) { try { await inf.readValue(); } catch (e) { /* not needed */ } }
+      // Reading the notify characteristic makes the tube ask for pairing; the OS then shows its pairing pop-up.
+      this.status = 'Pairing… accept the request on screen if one appears'; this.onChange();
+      for (let i = 0; i < 4; i++) { try { await nf.readValue(); break; } catch (e) { await sleep(2000); if (st.dead) return; } }
+      const raw = (bytes) => this.asteraWrite(st, bytes);
+      await raw(Uint8Array.of(0x0A)); await sleep(500);
+      await raw(A.utf('s0=0\n')); await sleep(300);
+      await raw(A.utf(A.connectLine(this.cfg.asteraPin))); await sleep(1000);
+      await raw(A.clockFrame(Date.now() / 1000)); await sleep(1000);
+      await raw(A.handshake2());
+      await raw(A.staticLook()); await sleep(A.LOOK_GAP);
+      if (st.dead) return;
+      st.ctl.reset(); st.ctl.lastLookAt = Date.now();
+      st.timers.push(setInterval(() => { const f = st.ctl.next(Date.now()); if (f) this.asteraWrite(st, f); }, 50));
+      st.timers.push(setInterval(() => this.asteraWrite(st, A.poll()), 1000));
+      st.timers.push(setTimeout(() => {
+        if (!st.rxAt && !st.dead) { this.status = 'Connected, but the tube is not answering. If you pressed "Unbond Bluetooth" on it, Forget it in your Bluetooth settings and connect again.'; this.onChange(); }
+      }, 8000));
+      this.ready = true; this.status = 'Connected'; this.onChange();
+    },
+    asteraWrite(st, bytes) {
+      st.chain = st.chain.then(async () => {
+        if (st.dead) return;
+        const c = st.wr; const v = Uint8Array.from(bytes);
+        if (c.writeValueWithoutResponse) await c.writeValueWithoutResponse(v); else await c.writeValue(v);
+      }).catch((e) => { this.status = `Send error: ${(e && e.message) || e}`; this.onChange(); });
+      return st.chain;
+    },
+    asteraRx(st, dv) {
+      const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+      let changed = !st.rxAt;
+      st.rxAt = Date.now();
+      for (const p of st.parser.push(bytes)) if (p[0] === 0x7F && p.length > 4 && p[4] <= 100 && p[4] !== st.battery) { st.battery = p[4]; changed = true; }
+      const m = /<sh1002>([^<]*)<\/sh1002>/.exec(st.parser.text);
+      if (m && m[1] !== st.fw) { st.fw = m[1]; changed = true; }
+      if (changed) this.onChange();
+    },
+    stopAstera() {
+      const st = this.ast; if (!st) return;
+      st.dead = true; st.timers.forEach((t) => { clearInterval(t); clearTimeout(t); }); this.ast = null;
+    },
+    // Reads the "Astera tube (Bluetooth)" fixture from the desk output: dimmer, R, G, B, effect, speed.
+    sendAstera(data) {
+      const st = this.ast; if (!st || st.dead) return;
+      const a = Math.max(1, Math.min(507, parseInt(this.cfg.asteraAddress, 10) || 1)) - 1;
+      const ev = data[a + 4]; const sv = data[a + 5];
+      const effect = ev < 10 ? 0 : Math.min(8, 1 + Math.floor((ev - 10) / 30));
+      const speed = sv === 0 ? 50 : Math.round((sv - 1) * 100 / 254);
+      st.ctl.set(data[a + 1], data[a + 2], data[a + 3], data[a], effect, speed);
+    },
+
     // Called with each new frame; never overlaps itself (BLE writes are async).
     send(data, format) {
-      if (!data || !this.connected || !this.ready || this.busy) return;
+      if (!data || !this.connected || !this.ready) return;
+      if (this.mode === 'astera') { this.sendAstera(data); return; }
+      if (this.busy) return;
       this.busy = true;
       const p = this.mode === 'dmxcat' ? this.sendDmxcat(data) : this.sendGeneric(data, format);
       p.catch((e) => { this.status = `Send error: ${(e && e.message) || e}`; this.onChange(); }).finally(() => { this.busy = false; });

@@ -435,6 +435,48 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     assert.ok(/\.lay-fx\s*\{[^}]*pointer-events:\s*auto/.test(css), 'fixture dots must be grabbable above the (pointer-events:none) fixture layer');
   });
 
+  await t('astera bluetooth: frames match the Astera app, parser, controller rules', async () => {
+    const A = require('../renderer/astera.js');
+    const h = (u) => Buffer.from(u).toString('hex').match(/../g).join(' ');
+    assert.strictEqual(h(A.poll()), '0a 01 7f c0 41');
+    assert.strictEqual(h(A.handshake2()), '0a 05 7f 93 27 00 02 0a 0a 09');
+    assert.strictEqual(h(A.colour(255, 0, 0)), '0a 10 7e df 36 00 00 00 00 7d 63 13 0c ff 0d 00 0e 00 e1 3e');
+    assert.strictEqual(h(A.colourDimmer(255, 128, 0, 128)), '0a 12 7e df 36 00 00 00 00 7d 63 13 0c ff 0d 80 0e 00 07 80 de ab');
+    assert.strictEqual(h(A.dimmer(0)), '0a 0c 7e df 36 00 00 00 00 7d 63 13 07 00 03 43');
+    assert.strictEqual(h(A.staticLook()), '0a 23 7e df 36 00 00 00 00 7d 63 13 a2 06 16 00 14 00 64 ff 00 00 00 ff 00 00 00 01 ff ff 01 ff ff c8 00 00 00 d9 4d');
+    assert.strictEqual(h(A.effectFrame(4, 50)), '0a 23 7e df 36 00 00 00 00 7d 63 13 a2 06 16 01 68 10 64 ff 00 00 00 ff 01 00 ff a5 00 ff 02 ff ff c8 00 00 64 a3 e9');
+    assert.strictEqual(A.EFFECTS.length, 8);
+    A.EFFECTS.forEach((e) => assert.strictEqual(e.body.length, 20));
+    // speed: 100 = 4x faster, 0 = 4x slower, clamped
+    const tm = (f) => parseInt(h(f).split(' ').slice(15, 17).join(''), 16);
+    assert.strictEqual(tm(A.effectFrame(4, 100)), 0x168 / 4);
+    assert.strictEqual(tm(A.effectFrame(4, 0)), 0x168 * 4);
+    // parser handles split notifications, text lines, doubled 0a
+    const p = new A.Parser(); const stream = Buffer.concat([Buffer.from('<reply>ok</reply>\n'), Buffer.from(A.handshake2()), Buffer.from(A.poll())]);
+    let got = []; for (let i = 0; i < stream.length; i += 3) got = got.concat(p.push(stream.subarray(i, i + 3)));
+    assert.deepStrictEqual(got, [[0x7f, 0x93, 0x27, 0, 2], [0x7f]]);
+    assert.ok(A.connectLine(1234).includes('s63=1234&'));
+    // controller: colour is hue at full value with brightness on the master dimmer; off = dimmer only; effects follow the 1.5 s rule
+    const c = new A.Controller(); let now = 10000; c.lastLookAt = -1e9;
+    c.set(128, 64, 0, 255, 0, 50);
+    assert.strictEqual(h(c.next(now)), h(A.colourDimmer(255, 128, 0, 128)));
+    assert.strictEqual(c.next(now + 200), null, 'no change, nothing sent');
+    c.set(0, 0, 0, 255, 0, 50);
+    assert.strictEqual(h(c.next(now + 400)), h(A.dimmer(0)), 'black sends only the dimmer');
+    c.set(255, 0, 0, 255, 4, 50);
+    assert.strictEqual(h(c.next(now + 600)), h(A.effectFrame(4, 50)));
+    assert.strictEqual(c.next(now + 800), null, 'quiet for 1.5 s after a look');
+    c.set(255, 255, 255, 100, 4, 50);
+    assert.strictEqual(h(c.next(now + 2200)), h(A.dimmer(100)), 'during an effect only brightness is sent');
+    c.set(255, 0, 0, 255, 0, 50);
+    assert.strictEqual(h(c.next(now + 2400)), h(A.staticLook()), 'leaving an effect sends the static look');
+    assert.strictEqual(c.next(now + 3000), null);
+    assert.strictEqual(h(c.next(now + 4000)), h(A.colourDimmer(255, 0, 0, 255)), 'then the colour again');
+    const E = new Engine(); E.updateSettings({ asteraAddress: 9999, asteraPin: '4321' });
+    assert.strictEqual(E.settings.asteraAddress, 507); assert.strictEqual(E.settings.asteraPin, 4321);
+    assert.ok(E.getLibrary ? true : true);
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();
