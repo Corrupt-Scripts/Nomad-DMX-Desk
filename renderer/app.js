@@ -41,9 +41,9 @@
   const fxUi = { cat: 'All', q: '' };
   const patchUi = { man: 'All', q: '' };
   let live = { out: [], status: { packets: 0, lastError: '', current: -1, fading: false, programmer: [] } };
-  const ui = { tab: 'desk', deskView: 'fixtures', anchor: null, pending: false, profileEdit: null, cells: [], tiles: new Map(), intensity: null, recNum: null };
+  const ui = { tab: 'desk', deskView: 'fixtures', anchor: null, pending: false, profileEdit: null, cells: [], tiles: new Map(), intensity: null, recNum: null, faders: [], fadScroll: 0 };
 
-  const TABS = [['desk', 'Desk'], ['layout', 'Layout'], ['patch', 'Patch'], ['cues', 'Cues'], ['effects', 'Effects'], ['output', 'Output']];
+  const TABS = [['desk', 'Desk'], ['faders', 'Faders'], ['layout', 'Layout'], ['patch', 'Patch'], ['cues', 'Cues'], ['effects', 'Effects'], ['output', 'Output']];
 
   async function call(method, ...args) {
     const r = await window.desk.api(method, ...args);
@@ -926,6 +926,73 @@
     return card;
   }
 
+
+  // ------------------------------------------------------------------ faders
+  // One fader for every DMX channel of the chosen universe (512). Each fader is a plain pointer-driven
+  // control, so several can be moved at once with fingers or a pen. Moving a fader holds that channel in the
+  // programmer; tapping its number releases it.
+  const FAD_W = 58;
+  function renderFaders() {
+    ui.faders = [];
+    const u = show.currentUniverse;
+    const labels = {};
+    for (const f of show.patch) {
+      if (f.universe !== u) continue;
+      const p = profileOf(f);
+      if (p) p.channels.forEach((c, i) => { labels[f.address - 1 + i] = `${f.num} ${c.name}`; });
+    }
+    const strip = el('div', { class: 'fad-strip' });
+    for (let i = 0; i < 512; i++) {
+      const ch = i + 1;
+      const fill = el('div', { class: 'fad-fill' });
+      const cap = el('div', { class: 'fad-cap' });
+      const trk = el('div', { class: 'fad-trk' }, fill, cap);
+      const val = el('div', { class: 'fad-v' }, '0');
+      const num = el('button', { class: 'fad-n', title: `Channel ${ch}: tap to release` }, String(ch));
+      const root = el('div', { class: `fad${labels[i] ? ' patched' : ''}`, 'data-ch': String(ch) }, num, trk, val, el('div', { class: 'fad-l', title: labels[i] || '' }, labels[i] || ''));
+      const f = { root, fill, cap, val, v: -1, prog: false, drag: false, send: throttle((v) => call('setChannel', u, ch, v), 30) };
+      const setFrom = (e) => {
+        const r = trk.getBoundingClientRect();
+        const v = Math.max(0, Math.min(255, Math.round((1 - (e.clientY - r.top) / r.height) * 255)));
+        paintFader(f, v, true);
+        f.send(v);
+      };
+      trk.addEventListener('pointerdown', (e) => {
+        if (e.button != null && e.button > 0) return;
+        f.drag = true; try { trk.setPointerCapture(e.pointerId); } catch (x) { /* pointer already gone */ }
+        setFrom(e); e.preventDefault();
+      });
+      trk.addEventListener('pointermove', (e) => { if (f.drag) setFrom(e); });
+      const end = (e) => { if (!f.drag) return; f.drag = false; try { trk.releasePointerCapture(e.pointerId); } catch (x) { /* released */ } };
+      trk.addEventListener('pointerup', end); trk.addEventListener('pointercancel', end);
+      num.addEventListener('click', () => call('setChannel', u, ch, null));
+      ui.faders.push(f); strip.appendChild(root);
+    }
+    const banks = el('div', { class: 'fad-banks' }, Array.from({ length: 16 }, (_, b) =>
+      el('button', { 'data-b': String(b), onclick: () => { strip.scrollTo({ left: b * 32 * (FAD_W + 6), behavior: 'smooth' }); } }, `${b * 32 + 1}–${b * 32 + 32}`)));
+    const markBank = () => {
+      const b = Math.min(15, Math.round(strip.scrollLeft / (32 * (FAD_W + 6))));
+      banks.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.b === String(b)));
+    };
+    strip.addEventListener('scroll', () => { ui.fadScroll = strip.scrollLeft; markBank(); }, { passive: true });
+    const head = el('h3', {}, 'Faders',
+      el('select', { onchange: (e) => call('setUniverse', parseInt(e.target.value, 10)), value: String(u) },
+        Array.from({ length: show.settings.universes }, (_, i) => el('option', { value: String(i + 1) }, `Universe ${i + 1}`))),
+      el('span', { class: 'grow' }),
+      el('span', { class: 'hint' }, 'Drag a fader to take that channel. Tap its number to give it back.'),
+      el('button', { onclick: () => call('clearProgrammer') }, 'Release all'));
+    $('#view').replaceChildren(el('div', { class: 'fad-wrap panel' }, head, banks, strip));
+    strip.scrollLeft = ui.fadScroll; markBank();
+    updateLive();
+  }
+  function paintFader(f, v, force) {
+    if (!force && f.v === v) return;
+    f.v = v;
+    f.val.textContent = v;
+    const pct = `${(v / 255) * 100}%`;
+    f.fill.style.height = pct; f.cap.style.bottom = pct;
+  }
+
   function renderOutput() {
     if (window.desk.remote) {
       $('#view').replaceChildren(el('div', { class: 'panel', style: 'max-width:780px' }, el('h3', {}, 'Output'),
@@ -971,6 +1038,7 @@
       case 'patch': renderPatch(); break;
       case 'cues': renderCues(); break;
       case 'effects': renderEffects(); break;
+      case 'faders': renderFaders(); break;
       case 'layout': renderLayout(); break;
       case 'output': renderOutput(); break;
       default: renderDesk();
@@ -1011,6 +1079,15 @@
   function updateLive() {
     if (!show) return;
     const out = live.out || [];
+    if (ui.tab === 'faders' && ui.faders.length) {
+      const u = out[show.currentUniverse - 1];
+      const prog = new Set((live.status.programmer || []).filter((k) => Math.floor(k / 512) === show.currentUniverse - 1).map((k) => k % 512));
+      ui.faders.forEach((f, i) => {
+        if (!f.drag) paintFader(f, u ? u[i] : 0);
+        const on = prog.has(i);
+        if (on !== f.prog) { f.prog = on; f.root.classList.toggle('prog', on); }
+      });
+    }
     if (ui.tab === 'desk') {
       if (ui.deskView === 'channels' && ui.cells.length) {
         const u = out[show.currentUniverse - 1];
