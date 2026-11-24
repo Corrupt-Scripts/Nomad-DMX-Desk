@@ -83,8 +83,25 @@ class Engine {
     this.stats = { packets: 0, lastError: '' };
     this.seq = new Uint8Array(MAX_UNIVERSES + 1);
     this.lastFrame = [new Uint8Array(512)];
+    this.licensed = true;       // library use (tests) is unrestricted; hosts attach a License to switch free mode on
+    this.licenseMgr = null;
+    this.licenseStatus = null;
     this.newShow();
   }
+
+  // ----------------------------------------------------------------- licence
+  attachLicense(mgr) {
+    this.licenseMgr = mgr;
+    const sync = () => { this.licensed = mgr.isLicensed(); this.licenseStatus = mgr.status(); };
+    sync();
+    mgr.onChange = () => { sync(); this.changed(); };
+  }
+  freeMode() { return !!this.licenseMgr && !this.licensed; }
+  freeLimits() { return (require('./license-config')).FREE_LIMITS; }
+  needLicense() { if (!this.licenseMgr) throw new Error('Licensing is not available here'); return this.licenseMgr; }
+  async licenseActivate(key) { return this.needLicense().activate(key); }
+  async licenseDeactivate() { return this.needLicense().deactivate(); }
+  async licenseRefresh() { return this.needLicense().refresh(); }
 
   // ---------------------------------------------------------------- show state
   newShow() {
@@ -216,6 +233,12 @@ class Engine {
     let num = parseInt(o.startNum, 10);
     if (!(num >= 1)) num = this.patch.reduce((m, f) => Math.max(m, f.num), 0) + 1;
     const base = String(o.name || p.name).slice(0, 40);
+    if (this.freeMode()) {
+      const lim = this.freeLimits();
+      const msg = 'Enter a licence key on the Output tab to unlock more.';
+      if (this.patch.length + count > lim.fixtures) throw new Error(`Free mode allows ${lim.fixtures} fixtures. ${msg}`);
+      if (universe > lim.universes || (address + foot * count - 1 > 512)) throw new Error(`Free mode allows ${lim.universes} universe. ${msg}`);
+    }
     for (let i = 0; i < count; i++) {
       if (address + foot - 1 > 512) { universe++; address = 1; }
       if (universe > MAX_UNIVERSES) throw new Error('Ran out of universes');
@@ -605,7 +628,9 @@ class Engine {
     let sock;
     try { sock = this.ensureSocket(); } catch (e) { this.stats.lastError = e.message; return; }
     const done = (err) => { if (err) this.stats.lastError = err.message; else { this.stats.packets++; this.stats.lastError = ''; } };
+    const maxU = this.freeMode() ? this.freeLimits().universes : Infinity;
     frame.forEach((data, i) => {
+      if (i >= maxU) return;
       const u = i + 1;
       this.seq[u] = (this.seq[u] % 255) + 1;
       const r = (s.routes && s.routes[i]) || {};
@@ -652,7 +677,7 @@ class Engine {
     if (patch.sacnPriority != null) s.sacnPriority = clamp(parseInt(patch.sacnPriority, 10) || 100, 0, 200);
     if (patch.bindIp != null) s.bindIp = String(patch.bindIp).trim();
     if (patch.universes != null) {
-      s.universes = clamp(parseInt(patch.universes, 10) || 1, 1, MAX_UNIVERSES);
+      s.universes = clamp(parseInt(patch.universes, 10) || 1, 1, this.freeMode() ? this.freeLimits().universes : MAX_UNIVERSES);
       if (this.currentUniverse > s.universes) this.currentUniverse = s.universes;
     }
     if (patch.routes != null) s.routes = normaliseRoutes(patch.routes);
@@ -752,6 +777,7 @@ class Engine {
       blackout: this.blackout,
       selection: this.selection,
       currentUniverse: this.currentUniverse,
+      license: this.licenseStatus,
     };
   }
 

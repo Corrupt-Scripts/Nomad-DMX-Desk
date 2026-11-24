@@ -2,5 +2,13 @@
   "appId": "com.corruptscripts.nomaddmx",
   "appName": "B-Box Lighting Desk",
   "webDir": "www",
-  "ios": { "contentInset": "never", "backgroundColor": "#0e0b14" }
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0e0b14"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }

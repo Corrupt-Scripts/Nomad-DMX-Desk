@@ -5,6 +5,7 @@ const { Filesystem, Directory, Encoding } = require('@capacitor/filesystem');
 const { KeepAwake } = require('@capacitor-community/keep-awake');
 const { Engine } = require('../../engine/engine');
 const { ALLOWED } = require('../../engine/api');
+const { License } = require('../../engine/license');
 const { artPollPacket, parseArtPollReply } = require('../../engine/artpoll');
 const udp = require('./udp');
 require('./ble-polyfill');
@@ -36,7 +37,18 @@ engine.onChange = () => {
   scheduleSave();
 };
 
+const lic = new License({
+  storage: {
+    read: async () => { try { return (await Filesystem.readFile({ path: 'license.json', directory: Directory.Data, encoding: Encoding.UTF8 })).data; } catch (e) { return null; } },
+    write: async (t) => { await Filesystem.writeFile({ path: 'license.json', data: t, directory: Directory.Data, encoding: Encoding.UTF8 }); },
+  },
+  deviceLabel: 'iPad',
+});
+engine.attachLicense(lic);
+
 const ready = (async () => {
+  lic.load().then(() => lic.refreshIfDue());
+  setInterval(() => lic.refreshIfDue(), 6 * 3600 * 1000);
   try {
     const r = await Filesystem.readFile({ path: AUTOSAVE, directory: Directory.Data, encoding: Encoding.UTF8 });
     engine.load(JSON.parse(r.data));
@@ -113,7 +125,7 @@ window.desk = {
     if (method === 'getShow') return engine.getShow();
     if (method === 'getLibrary') return engine.getLibrary();
     if (method === 'execute') return engine.execute(...args);
-    try { return { ok: true, result: engine[method](...args) }; } catch (e) { return { ok: false, message: e.message }; }
+    try { return { ok: true, result: await engine[method](...args) }; } catch (e) { return { ok: false, message: e.message }; }
   },
   onShow: (cb) => showCbs.push(cb),
   onLive: (cb) => liveCbs.push(cb),

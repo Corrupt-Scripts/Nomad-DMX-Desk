@@ -6,6 +6,8 @@ const { Engine } = require('./engine/engine');
 const discovery = require('./engine/discovery');
 const { createRemote } = require('./engine/remote');
 const crypto = require('crypto');
+const os = require('os');
+const { License } = require('./engine/license');
 
 // The app used to be called "Nomad DMX Desk". Keep using its data folder so saved shows and settings carry over.
 try {
@@ -55,13 +57,13 @@ engine.onChange = () => {
   scheduleSave();
 };
 
-ipcMain.handle('api', (_e, method, args) => {
+ipcMain.handle('api', async (_e, method, args) => {
   if (!ALLOWED.has(method)) throw new Error(`Unknown method ${method}`);
   if (method === 'execute') return engine.execute(...args);
   if (method === 'getShow') return engine.getShow();
   if (method === 'getLibrary') return engine.getLibrary();
   try {
-    return { ok: true, result: engine[method](...(args || [])) };
+    return { ok: true, result: await engine[method](...(args || [])) };
   } catch (e) {
     return { ok: false, message: e.message };
   }
@@ -171,6 +173,15 @@ app.whenReady().then(() => {
   try {
     if (fs.existsSync(autosavePath())) engine.load(JSON.parse(fs.readFileSync(autosavePath(), 'utf8')));
   } catch (e) { engine.newShow(); }
+  // Licence: stored beside the show data; checked with the shop about daily. Offline keeps working for a while.
+  const licFile = path.join(app.getPath('userData'), 'license.json');
+  const lic = new License({
+    storage: { read: async () => (fs.existsSync(licFile) ? fs.readFileSync(licFile, 'utf8') : null), write: async (t) => fs.writeFileSync(licFile, t) },
+    deviceLabel: `${os.hostname()} (${process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows' : process.platform})`.slice(0, 60),
+  });
+  engine.attachLicense(lic);
+  lic.load().then(() => lic.refreshIfDue());
+  setInterval(() => lic.refreshIfDue(), 6 * 3600 * 1000);
   buildMenu();
   createWindow();
   engine.start();

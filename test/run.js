@@ -477,6 +477,74 @@ const t = async (name, fn) => { try { await fn(); n++; console.log('ok  ', name)
     assert.ok(E.getLibrary ? true : true);
   });
 
+  await t('licence: admin keys, Polar activation/validation/grace, free-mode limits', async () => {
+    const { License, verifyAdmin } = require('../engine/license');
+    const cfg = require('../engine/license-config');
+    const nacl = require('tweetnacl');
+    // an admin key signed with a different private key must be rejected; the real one is checked offline
+    const b64u = (u) => Buffer.from(u).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const forge = nacl.sign.keyPair();
+    const payload = b64u(Buffer.from(JSON.stringify({ v: 1, t: 'admin', n: 'x' })));
+    const forged = `BBOX-ADMIN-${payload}.${b64u(nacl.sign.detached(Buffer.from(payload), forge.secretKey))}`;
+    assert.strictEqual(verifyAdmin(forged), null, 'forged admin key rejected');
+    assert.strictEqual(verifyAdmin('BBOX-ADMIN-abc.def'), null);
+    assert.strictEqual(verifyAdmin('hello'), null);
+    // Polar flow with a fake server
+    let now = 1e12; let calls = []; let validateReply = { ok: true, status: 200, json: { status: 'granted' } }; let netDown = false;
+    const fetch = async (url, init) => {
+      const path = url.split('/license-keys/')[1]; const body = JSON.parse(init.body); calls.push({ path, body });
+      if (netDown) throw new Error('offline');
+      if (path === 'activate') return body.key === 'GOOD-KEY-1234' ? { ok: true, status: 200, json: async () => ({ id: 'act-1', license_key: { status: 'granted' } }) }
+        : body.key === 'FULL' ? { ok: false, status: 403, json: async () => ({}) } : { ok: false, status: 404, json: async () => ({}) };
+      if (path === 'validate') return { ok: validateReply.ok, status: validateReply.status, json: async () => validateReply.json };
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    let saved = null;
+    const mk = () => new License({ fetch, now: () => now, deviceLabel: 'test box', polar: { organizationId: 'org-1' }, storage: { read: async () => saved, write: async (t) => { saved = t; } } });
+    const lic = mk(); await lic.load();
+    assert.strictEqual(lic.status().state, 'free');
+    assert.ok(/not found/i.test((await lic.activate('nope')).message));
+    assert.ok(/maximum number of devices/i.test((await lic.activate('FULL')).message));
+    assert.strictEqual((await lic.activate('GOOD-KEY-1234')).state, 'licensed');
+    assert.deepStrictEqual(calls.find((c) => c.path === 'activate').body, { key: 'nope', organization_id: 'org-1', label: 'test box' });
+    // survives a restart, validates with its activation id
+    const lic2 = mk(); await lic2.load(); assert.strictEqual(lic2.isLicensed(), true);
+    await lic2.refresh(); assert.deepStrictEqual(calls[calls.length - 1], { path: 'validate', body: { key: 'GOOD-KEY-1234', organization_id: 'org-1', activation_id: 'act-1' } });
+    // offline: keeps working inside the grace period, stops after it
+    const before = calls.length; await lic2.refreshIfDue(); assert.strictEqual(calls.length, before, 'no check inside the first week');
+    now += 8 * 86400000; netDown = true; await lic2.refreshIfDue(); assert.strictEqual(lic2.isLicensed(), true, 'offline after a week is fine');
+    now += 14 * 86400000; assert.strictEqual(lic2.isLicensed(), false, 'grace period over');
+    netDown = false; await lic2.refreshIfDue(); assert.strictEqual(lic2.isLicensed(), true, 'back online and valid again');
+    // revoked
+    validateReply = { ok: true, status: 200, json: { status: 'revoked' } }; await lic2.refresh(); assert.strictEqual(lic2.isLicensed(), false);
+    // sign out
+    validateReply = { ok: true, status: 200, json: { status: 'granted' } };
+    await lic.deactivate(); assert.strictEqual(lic.isLicensed(), false); assert.strictEqual(JSON.parse(saved).key, undefined);
+    assert.strictEqual(calls[calls.length - 1].path, 'deactivate');
+    // not linked to the shop yet
+    const unset = new License({ fetch, polar: { organizationId: '' } }); await unset.load();
+    assert.ok(/not linked/i.test((await unset.activate('GOOD-KEY-1234')).message));
+    // the admin key shipped in tools/ output verifies and unlocks without any network
+    const adm = new License({ fetch: null, polar: { organizationId: '' } });
+    const secret = nacl.sign.keyPair.fromSeed(nacl.hash(Buffer.from('test')).slice(0, 32)); // different key: must fail against the built-in public key
+    const p2 = b64u(Buffer.from(JSON.stringify({ v: 1, t: 'admin', n: 'T' })));
+    assert.ok(/not valid/i.test((await adm.activate(`BBOX-ADMIN-${p2}.${b64u(nacl.sign.detached(Buffer.from(p2), secret.secretKey))}`)).message));
+    // free mode limits in the engine
+    const E = new Engine(); const L = new License({ fetch, now: () => now, polar: { organizationId: 'org-1' }, storage: { read: async () => null, write: async () => {} } });
+    E.attachLicense(L); await L.load();
+    assert.strictEqual(E.freeMode(), true);
+    E.addFixtures({ profileId: 'b-rgb', count: 16, universe: 1, address: 1 });
+    assert.throws(() => E.addFixtures({ profileId: 'b-rgb', count: 1, universe: 1, address: 100 }), /Free mode allows 16 fixtures/);
+    E.updateSettings({ universes: 4 }); assert.strictEqual(E.settings.universes, 1);
+    const sent = []; E.ensureSocket = () => ({ send: (pkt, port, host, cb) => { sent.push(pkt); cb(); } });
+    E.sendFrame([new Uint8Array(512), new Uint8Array(512)]); assert.strictEqual(sent.length, 1, 'only universe 1 is sent in free mode');
+    await E.licenseActivate('GOOD-KEY-1234'); assert.strictEqual(E.freeMode(), false);
+    assert.strictEqual(E.getShow().license.state, 'licensed');
+    E.addFixtures({ profileId: 'b-rgb', count: 1, universe: 1, address: 100 });
+    E.updateSettings({ universes: 4 }); assert.strictEqual(E.settings.universes, 4);
+    assert.ok(cfg.ADMIN_PUBLIC_KEY.length > 40);
+  });
+
   console.log(`\n${n} test groups passed`);
   process.exit(process.exitCode || 0);
 })();

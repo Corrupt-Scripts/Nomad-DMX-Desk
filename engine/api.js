@@ -6,6 +6,7 @@ const ALLOWED = new Set([
   'recordCue', 'updateCue', 'deleteCue', 'goIndex', 'addEffect', 'updateEffect', 'removeEffect',
   'setLayoutImage', 'getLayoutImage', 'setLayoutPositions', 'removeLayoutPositions', 'layoutAuto', 'addShape', 'updateShape', 'removeShape', 'moveShape', 'clearShapes', 'setLayoutOptions',
   'addFixtures', 'updateFixture', 'removeFixture', 'saveProfile', 'deleteProfile', 'updateSettings', 'swapProtocols',
+  'licenseActivate', 'licenseDeactivate', 'licenseRefresh',
 ]);
 
 module.exports = { ALLOWED };

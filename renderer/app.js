@@ -993,10 +993,70 @@
     f.fill.style.height = pct; f.cap.style.bottom = pct;
   }
 
+
+  // ----------------------------------------------------------------- licence
+  const FREE_TEXT = 'Free mode: 1 universe and 16 fixtures.';
+  function licenseLine(L) {
+    if (!L) return 'Licence is not available here.';
+    if (L.state === 'licensed') return L.kind === 'admin' ? `Admin key active${L.name ? ` (${L.name})` : ''}. Everything is unlocked.` : `Licensed (key ${L.keyHint}). Everything is unlocked.`;
+    if (L.state === 'checking') return 'Checking your key…';
+    return FREE_TEXT;
+  }
+  function renderLicensePill() {
+    const b = $('#lic'); if (!b) return;
+    const L = show && show.license;
+    if (!L || L.state === 'checking') { b.hidden = true; return; }
+    b.hidden = false;
+    b.className = `licpill${L.state === 'licensed' ? ' ok' : ''}`;
+    b.textContent = L.state === 'licensed' ? (L.kind === 'admin' ? 'Admin' : 'Licensed') : 'Free mode · enter key';
+    b.onclick = () => { ui.tab = 'output'; renderTabs(); renderView(true); };
+  }
+  function licenseCard() {
+    const L = show.license;
+    const out = [el('h3', {}, 'Licence', el('span', { class: 'grow' }), el('span', { class: `pill${L && L.state === 'licensed' ? ' ok' : ''}` }, L ? (L.state === 'licensed' ? 'active' : L.state === 'checking' ? 'checking' : 'free mode') : '–'))];
+    out.push(el('div', { class: L && L.state === 'licensed' ? '' : 'hint', style: 'margin-bottom:8px' }, licenseLine(L)));
+    if (window.desk.remote) { out.push(el('div', { class: 'hint' }, 'The licence is managed on the computer running B-Box Lighting Desk.')); return out; }
+    if (L && L.state === 'licensed') {
+      out.push(el('div', { class: 'row' }, el('button', { onclick: async () => { await call('licenseDeactivate'); } }, 'Sign out of this device')));
+      if (L.kind === 'polar') out.push(el('div', { class: 'hint', style: 'margin-top:8px' }, 'Sign out to move your key to another device. Your saved key is checked online about once a week, so you never need to type it again. It keeps working offline for a few weeks.'));
+    } else {
+      const input = el('input', { type: 'text', placeholder: 'Paste your licence key', autocomplete: 'off', spellcheck: 'false', style: 'flex:1' });
+      const go = async () => { go.btn.disabled = true; await call('licenseActivate', input.value); };
+      go.btn = el('button', { class: 'primary', onclick: go }, 'Activate');
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      out.push(el('div', { class: 'row' }, input, go.btn));
+      if (L && L.message) out.push(el('div', { class: 'err-text', style: 'margin-top:8px' }, L.message));
+      out.push(el('div', { class: 'hint', style: 'margin-top:8px' }, 'Your key is emailed to you when you buy on the B-Box website.'));
+    }
+    return out;
+  }
+  function licenseWelcome() {
+    const L = show && show.license;
+    if (window.desk.remote || ui.licenseAsked || !L || L.state !== 'free' || L.kind) return;
+    ui.licenseAsked = true;
+    const input = el('input', { type: 'text', placeholder: 'Paste your licence key', autocomplete: 'off', spellcheck: 'false', style: 'width:100%' });
+    const msg = el('div', { class: 'err-text', style: 'min-height:18px;margin-top:8px' });
+    const close = () => ov.remove();
+    const go = async () => {
+      const r = await call('licenseActivate', input.value);
+      const st = r && r.result;
+      if (st && st.state === 'licensed') close(); else msg.textContent = (st && st.message) || 'That key did not work';
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    const ov = el('div', { class: 'lic-overlay' }, el('div', { class: 'lic-box panel' },
+      el('div', { class: 'brand', style: 'font-size:18px;margin-bottom:10px' }, 'B-BOX ', el('span', {}, 'LIGHTING DESK')),
+      el('h3', { style: 'text-transform:none;letter-spacing:0;font-size:20px;margin:0 0 8px' }, 'Enter your licence key'),
+      el('div', { class: 'hint', style: 'margin-bottom:12px' }, 'You can find it in the email you got when you bought the desk.'),
+      input, msg,
+      el('div', { class: 'row', style: 'margin-top:12px' }, el('button', { class: 'primary', onclick: go }, 'Activate'), el('span', { class: 'grow' }), el('button', { onclick: close }, 'Continue in free mode')),
+      el('div', { class: 'hint', style: 'margin-top:10px' }, `${FREE_TEXT} Enter a key any time on the Output tab.`)));
+    document.body.appendChild(ov); setTimeout(() => input.focus(), 50);
+  }
+
   function renderOutput() {
     if (window.desk.remote) {
-      $('#view').replaceChildren(el('div', { class: 'panel', style: 'max-width:780px' }, el('h3', {}, 'Output'),
-        el('div', { class: 'hint' }, 'You are controlling the desk remotely. Network and Bluetooth output are set up on the computer running B-Box Lighting Desk.')));
+      $('#view').replaceChildren(el('div', { class: 'stack', style: 'max-width:780px' }, el('div', { class: 'panel' }, el('h3', {}, 'Output'),
+        el('div', { class: 'hint' }, 'You are controlling the desk remotely. Network and Bluetooth output are set up on the computer running B-Box Lighting Desk.')), mountCard('lic', licenseCard)));
       return;
     }
     if (window.desk.native) {
@@ -1004,12 +1064,12 @@
         el('div', { class: 'panel' }, el('h3', {}, 'iPad'),
           el('div', { class: 'hint' }, 'Keep this app open on screen while the lights are running: iPadOS pauses apps in the background, which stops the DMX. The iPad is kept awake while the app is open.'),
           el('div', { class: 'hint', style: 'margin-top:6px' }, 'Wi-Fi is chosen in the iPad Settings app. sACN multicast is not available on iPad (Apple restricts it), so use Art-Net or sACN to a node\'s address.')),
-        mountCard('net', netCard), mountCard('route', routeCard), mountCard('ble', bleCard), mountCard('adv', advCard)));
+        mountCard('lic', licenseCard), mountCard('net', netCard), mountCard('route', routeCard), mountCard('ble', bleCard), mountCard('adv', advCard)));
       if (net.nodes == null && !net.scanning) scanNodes();
       return;
     }
     $('#view').replaceChildren(el('div', { class: 'stack', style: 'max-width:780px' },
-      mountCard('net', netCard), mountCard('wifi', wifiCard), mountCard('route', routeCard), mountCard('ble', bleCard), remoteCard(), mountCard('adv', advCard)));
+      mountCard('lic', licenseCard), mountCard('net', netCard), mountCard('wifi', wifiCard), mountCard('route', routeCard), mountCard('ble', bleCard), remoteCard(), mountCard('adv', advCard)));
     if (net.nodes == null && !net.scanning) scanNodes();
     if (wifi.list == null && !wifi.scanning) scanWifi();
   }
@@ -1025,7 +1085,7 @@
   function viewSig(s) {
     return JSON.stringify([
       s.patch.map((f) => f.id), s.cues.map((c) => c.id + ':' + Object.keys(c.values).length), s.effects.map((e) => e.id + ':' + e.fixtureIds.join('.')),
-      s.profiles.map((p) => p.id + p.name + p.channels.length), s.layout, s.selection, s.currentUniverse, s.conflicts, s.currentCue, s.settings.universes, s.name,
+      s.profiles.map((p) => p.id + p.name + p.channels.length), s.layout, s.selection, s.currentUniverse, s.conflicts, s.currentCue, s.settings.universes, s.name, s.license,
     ]);
   }
 
@@ -1186,7 +1246,7 @@
       const changed = !show || viewSig(s) !== ui.sig;
       show = s;
       if (window.BLE) window.BLE.cfg = s.settings;
-      renderCueBar(); renderMaster();
+      renderCueBar(); renderMaster(); renderLicensePill();
       if (changed) renderView(false);
     });
     window.desk.onLive((l) => {
@@ -1197,7 +1257,8 @@
     if (window.BLE) window.BLE.onChange = () => { refreshCard('ble'); updateLive(); };
     show = await window.desk.api('getShow');
     try { lib = await window.desk.api('getLibrary'); } catch (e) { /* library optional */ }
-    renderTabs(); renderCueBar(); renderMaster(); renderView(true);
+    renderTabs(); renderCueBar(); renderMaster(); renderLicensePill(); renderView(true);
+    setTimeout(licenseWelcome, 1800);
   }
 
   boot();
