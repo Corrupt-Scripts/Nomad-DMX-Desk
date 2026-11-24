@@ -1,6 +1,6 @@
 {
   "name": "nomad-dmx-desk",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Cross-platform DMX lighting desk (Art-Net / sACN) for Windows and macOS",
   "main": "main.js",
   "author": "Corrupt Scripts",
@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "uk.corruptscripts.nomaddmxdesk",
-    "productName": "Nomad DMX Desk",
+    "productName": "B-Box Lighting Desk",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -36,9 +36,9 @@
       "category": "public.app-category.video",
       "identity": null,
       "extendInfo": {
-        "NSBluetoothAlwaysUsageDescription": "Nomad DMX Desk uses Bluetooth to send DMX to wireless receivers.",
-        "NSBluetoothPeripheralUsageDescription": "Nomad DMX Desk uses Bluetooth to send DMX to wireless receivers.",
-        "NSLocalNetworkUsageDescription": "Nomad DMX Desk sends DMX over your local network (Art-Net and sACN)."
+        "NSBluetoothAlwaysUsageDescription": "B-Box Lighting Desk uses Bluetooth to send DMX to wireless receivers.",
+        "NSBluetoothPeripheralUsageDescription": "B-Box Lighting Desk uses Bluetooth to send DMX to wireless receivers.",
+        "NSLocalNetworkUsageDescription": "B-Box Lighting Desk sends DMX over your local network (Art-Net and sACN)."
       },
       "target": [
         {

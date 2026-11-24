@@ -116,7 +116,7 @@ class Engine {
   }
 
   load(obj) {
-    if (!obj || obj.format !== 'nomad-dmx-desk') throw new Error('Not a Nomad DMX Desk show file');
+    if (!obj || obj.format !== 'nomad-dmx-desk') throw new Error('Not a B-Box Lighting Desk show file');
     this.newShow();
     this.showName = String(obj.name || 'Untitled show');
     this.settings = Object.assign(defaultSettings(), obj.settings || {});

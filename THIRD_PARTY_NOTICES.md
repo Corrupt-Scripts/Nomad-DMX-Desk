@@ -3,7 +3,7 @@
 ## Open Fixture Library
 
 `engine/library/film-ofl.json` is derived from fixture definitions in the Open Fixture Library
-(https://github.com/OpenLightingProject/open-fixture-library), converted into Nomad's channel-type format
+(https://github.com/OpenLightingProject/open-fixture-library), converted into the desk's channel-type format
 (film and studio manufacturers only). The project is distributed under the MIT licence:
 
 MIT License

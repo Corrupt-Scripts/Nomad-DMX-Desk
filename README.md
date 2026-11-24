@@ -1,4 +1,4 @@
-# Nomad DMX Desk
+# B-Box Lighting Desk
 
 A cross-platform (Windows + macOS) DMX lighting desk. Outputs Art-Net and sACN (E1.31) over your network, so it works with any gateway/node – including a Boulder Box.
 
@@ -17,7 +17,7 @@ Original software by Corrupt Scripts. Not affiliated with any other lighting con
 - 186 effects on selected fixtures, searchable by category: basic waveforms, chases, colour effects, and film effects (fire, candle, lightning, TV, police, paparazzi, faulty bulbs, explosions, sunrise and many more). Colour effects work on RGB, CCT or bi-colour fixtures.
 - 1,090 film and studio fixture modes (Aputure, ARRI, Astera, Kino Flo, Lupo, Chroma-Q, LiteGear and more) from the Open Fixture Library, searchable in the Patch tab. See THIRD_PARTY_NOTICES.md.
 - Grand master + blackout, Art-Net / sACN / both, unicast or broadcast / multicast
-- Save/open show files (`.nomaddmx`), auto-saves and restores last show
+- Save/open show files (`.bboxdesk`; older `.nomaddmx` files still open), auto-saves and restores last show
 
 Keyboard: `Space` = GO, `Esc` = clear, just start typing to use the command line (↑/↓ for history).
 
@@ -33,7 +33,7 @@ npm test        # engine tests (packet formats, parser, cues, effects, UDP outpu
 
 GitHub does it for you: push to a GitHub repo, open **Actions → Build desktop apps → Run workflow**, then download the artifacts:
 
-- Windows: `Nomad DMX Desk-…-win-x64.exe` (installer) and a portable `.exe`
+- Windows: `B-Box Lighting Desk-…-win-x64.exe` (installer) and a portable `.exe`
 - macOS: `.dmg` for Apple silicon (arm64) and Intel (x64)
 
 Or locally: `npm run dist:win` on Windows, `npm run dist:mac` on a Mac.

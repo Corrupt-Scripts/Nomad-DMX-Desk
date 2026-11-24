@@ -1,8 +1,8 @@
 {
   "name": "nomad-dmx-desk-ipad",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
-  "description": "Nomad DMX Desk for iPad (Capacitor wrapper around the same engine and screen)",
+  "description": "B-Box Lighting Desk for iPad (Capacitor wrapper around the same engine and screen)",
   "scripts": {
     "build:web": "node build-web.mjs",
     "test": "node test-bundle.mjs"

@@ -854,7 +854,7 @@
     out.push(el('div', { class: 'form', style: 'grid-template-columns:170px 1fr;margin-top:12px' },
       el('label', {}, 'Universe sent'), el('input', { type: 'number', min: 1, max: 16, value: s.bleUniverse, onchange: (e) => call('updateSettings', { bleUniverse: e.target.value }) }),
       el('label', {}, 'Packet format'), el('select', { value: s.bleFormat, onchange: (e) => call('updateSettings', { bleFormat: e.target.value }) },
-        [['OFFSET', 'Offset (Nomad / Boulders receivers)'], ['PLAIN', 'Plain 513-byte stream']].map(([v, n]) => el('option', { value: v }, n)))));
+        [['OFFSET', 'Offset (B-Box / Boulders receivers)'], ['PLAIN', 'Plain 513-byte stream']].map(([v, n]) => el('option', { value: v }, n)))));
     out.push(el('div', { class: 'form', style: 'grid-template-columns:170px 1fr;margin-top:8px' },
       el('label', {}, 'Astera radio PIN'), field0(el('input', { type: 'number', min: 0, max: 99999999, value: s.asteraPin, onchange: (e) => call('updateSettings', { asteraPin: e.target.value }) })),
       el('label', {}, 'Astera fixture address'), el('input', { type: 'number', min: 1, max: 507, value: s.asteraAddress, onchange: (e) => call('updateSettings', { asteraAddress: e.target.value }) })));
@@ -929,7 +929,7 @@
   function renderOutput() {
     if (window.desk.remote) {
       $('#view').replaceChildren(el('div', { class: 'panel', style: 'max-width:780px' }, el('h3', {}, 'Output'),
-        el('div', { class: 'hint' }, 'You are controlling the desk remotely. Network and Bluetooth output are set up on the computer running Nomad DMX Desk.')));
+        el('div', { class: 'hint' }, 'You are controlling the desk remotely. Network and Bluetooth output are set up on the computer running B-Box Lighting Desk.')));
       return;
     }
     if (window.desk.native) {

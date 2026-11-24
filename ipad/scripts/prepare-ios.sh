@@ -9,11 +9,11 @@ BUILD=${GITHUB_RUN_NUMBER:-1}
 
 pb() { /usr/libexec/PlistBuddy -c "$1" "$PLIST" 2>/dev/null || true; }
 pb "Delete :NSBluetoothAlwaysUsageDescription"
-pb "Add :NSBluetoothAlwaysUsageDescription string Nomad DMX Desk uses Bluetooth to send DMX to wireless lighting receivers."
+pb "Add :NSBluetoothAlwaysUsageDescription string B-Box Lighting Desk uses Bluetooth to send DMX to wireless lighting receivers."
 pb "Delete :NSBluetoothPeripheralUsageDescription"
-pb "Add :NSBluetoothPeripheralUsageDescription string Nomad DMX Desk uses Bluetooth to send DMX to wireless lighting receivers."
+pb "Add :NSBluetoothPeripheralUsageDescription string B-Box Lighting Desk uses Bluetooth to send DMX to wireless lighting receivers."
 pb "Delete :NSLocalNetworkUsageDescription"
-pb "Add :NSLocalNetworkUsageDescription string Nomad DMX Desk talks to lighting nodes on your local network (Art-Net and sACN)."
+pb "Add :NSLocalNetworkUsageDescription string B-Box Lighting Desk talks to lighting nodes on your local network (Art-Net and sACN)."
 pb "Delete :UIFileSharingEnabled"
 pb "Add :UIFileSharingEnabled bool true"
 pb "Delete :LSSupportsOpeningDocumentsInPlace"

@@ -1,6 +1,6 @@
-# Nomad DMX Desk on iPad
+# B-Box Lighting Desk on iPad
 
-The iPad app is built as an **unsigned** `.ipa` (`NomadDMX-<version>-unsigned.ipa`, from the "iPad app" GitHub Action).
+The iPad app is built as an **unsigned** `.ipa` (`BBoxLightingDesk-<version>-unsigned.ipa`, from the "iPad app" GitHub Action).
 Apple only lets an app run on your iPad if it is signed. With a free Apple ID that signature lasts **7 days**, so something has to re-sign it
 every week. AltStore does that automatically from your Windows PC or Mac.
 

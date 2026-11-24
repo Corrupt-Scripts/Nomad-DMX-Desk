@@ -62,10 +62,10 @@ jobs:
           echo "Found $APP"
           rm -rf Payload && mkdir Payload
           cp -R "$APP" Payload/
-          zip -qry "NomadDMX-$VERSION-unsigned.ipa" Payload
+          zip -qry "BBoxLightingDesk-$VERSION-unsigned.ipa" Payload
           ls -la *.ipa
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nomad-dmx-desk-ipad
-          path: ipad/NomadDMX-*-unsigned.ipa
+          name: bbox-lighting-desk-ipad
+          path: ipad/BBoxLightingDesk-*-unsigned.ipa

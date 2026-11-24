@@ -11,12 +11,12 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 // Things a remote screen may not do: change where the DMX goes, or touch the computer.
 const REMOTE_BLOCKED = new Set(['updateSettings', 'swapProtocols']);
 
-const loginPage = (msg) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nomad DMX Desk</title>
+const loginPage = (msg) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>B-Box Lighting Desk</title>
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0e0b14;color:#e9e4f5;font:16px system-ui,sans-serif}
 form{background:#17131f;border:1px solid #2d2640;border-radius:12px;padding:24px;width:min(320px,90vw);display:flex;flex-direction:column;gap:12px}
 h1{margin:0;font-size:14px;letter-spacing:.12em}h1 span{color:#a78bfa}input{font:inherit;font-size:22px;letter-spacing:.3em;text-align:center;padding:10px;border-radius:8px;border:1px solid #2d2640;background:#120f19;color:inherit}
 button{font:inherit;padding:10px;border-radius:8px;border:0;background:#8b5cf6;color:#fff;font-weight:600}p{margin:0;color:#f87171;font-size:13px;min-height:16px}</style></head>
-<body><form method="post" action="/login"><h1>NOMAD <span>DMX DESK</span></h1><input name="pin" inputmode="numeric" autocomplete="off" placeholder="PIN" autofocus><p>${msg || ''}</p><button>Connect</button></form></body></html>`;
+<body><form method="post" action="/login"><h1>B-BOX <span>LIGHTING DESK</span></h1><input name="pin" inputmode="numeric" autocomplete="off" placeholder="PIN" autofocus><p>${msg || ''}</p><button>Connect</button></form></body></html>`;
 
 function lanAddresses() {
   const out = [];

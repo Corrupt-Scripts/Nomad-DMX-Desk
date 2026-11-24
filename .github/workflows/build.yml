@@ -29,7 +29,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
-          name: nomad-dmx-desk-${{ matrix.os }}
+          name: bbox-lighting-desk-${{ matrix.os }}
           path: |
             dist/*.exe
             dist/*.dmg

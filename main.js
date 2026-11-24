@@ -7,6 +7,12 @@ const discovery = require('./engine/discovery');
 const { createRemote } = require('./engine/remote');
 const crypto = require('crypto');
 
+// The app used to be called "Nomad DMX Desk". Keep using its data folder so saved shows and settings carry over.
+try {
+  const oldDir = path.join(app.getPath('appData'), 'Nomad DMX Desk');
+  if (fs.existsSync(oldDir) && !fs.existsSync(app.getPath('userData'))) app.setPath('userData', oldDir);
+} catch (e) { /* use the default folder */ }
+
 const engine = new Engine();
 let win = null;
 let showTimer = null;
@@ -34,7 +40,7 @@ function sendShow() {
   const snap = engine.getShow();
   remote.sendShow(snap);
   if (win && !win.isDestroyed()) win.webContents.send('show', snap);
-  if (win && !win.isDestroyed()) win.setTitle(`${engine.showName} – Nomad DMX Desk`);
+  if (win && !win.isDestroyed()) win.setTitle(`${engine.showName} – B-Box Lighting Desk`);
 }
 
 function scheduleSave() {
@@ -88,12 +94,12 @@ ipcMain.on('ble:select', (_e, id) => {
 });
 
 async function openShow() {
-  const r = await dialog.showOpenDialog(win, { filters: [{ name: 'Nomad DMX show', extensions: ['nomaddmx', 'json'] }], properties: ['openFile'] });
+  const r = await dialog.showOpenDialog(win, { filters: [{ name: 'B-Box Lighting Desk show', extensions: ['bboxdesk', 'nomaddmx', 'json'] }], properties: ['openFile'] });
   if (r.canceled || !r.filePaths[0]) return;
   try {
     engine.load(JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8')));
     filePath = r.filePaths[0];
-    engine.showName = path.basename(filePath).replace(/\.(nomaddmx|json)$/i, '');
+    engine.showName = path.basename(filePath).replace(/\.(bboxdesk|nomaddmx|json)$/i, '');
     engine.changed();
   } catch (e) {
     dialog.showErrorBox('Could not open show', e.message);
@@ -101,10 +107,10 @@ async function openShow() {
 }
 
 async function saveShowAs() {
-  const r = await dialog.showSaveDialog(win, { defaultPath: `${engine.showName}.nomaddmx`, filters: [{ name: 'Nomad DMX show', extensions: ['nomaddmx'] }] });
+  const r = await dialog.showSaveDialog(win, { defaultPath: `${engine.showName}.bboxdesk`, filters: [{ name: 'B-Box Lighting Desk show', extensions: ['bboxdesk'] }] });
   if (r.canceled || !r.filePath) return;
   filePath = r.filePath;
-  engine.showName = path.basename(filePath).replace(/\.nomaddmx$/i, '');
+  engine.showName = path.basename(filePath).replace(/\.bboxdesk$/i, '');
   writeShow();
   engine.changed();
 }
@@ -138,7 +144,7 @@ function buildMenu() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1360, height: 860, minWidth: 980, minHeight: 640, backgroundColor: '#0e0b14', title: 'Nomad DMX Desk',
+    width: 1360, height: 860, minWidth: 980, minHeight: 640, backgroundColor: '#0e0b14', title: 'B-Box Lighting Desk',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));

@@ -33,7 +33,7 @@ function sacnPacket(universe, sequence, data, priority, sourceName) {
   // Framing layer
   b.writeUInt16BE(0x7000 | (total - 38), 38);
   b.writeUInt32BE(0x00000002, 40);       // VECTOR_E131_DATA_PACKET
-  b.write(String(sourceName || 'Nomad DMX Desk').slice(0, 63), 44, 'utf8');
+  b.write(String(sourceName || 'B-Box Lighting Desk').slice(0, 63), 44, 'utf8');
   b[108] = Math.max(0, Math.min(200, priority == null ? 100 : priority));
   b.writeUInt16BE(0, 109);               // sync address
   b[111] = sequence & 0xff;
