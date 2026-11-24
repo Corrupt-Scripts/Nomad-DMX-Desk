@@ -19,6 +19,7 @@ await build({
   platform: 'browser',
   target: ['safari15'],
   alias: { dgram: path.join(here, 'src', 'dgram-shim.js'), crypto: path.join(here, 'src', 'crypto-shim.js') },
+  nodePaths: [path.join(here, 'node_modules')], // engine/ files import shared deps (tweetnacl) installed beside the iPad app
   inject: [path.join(here, 'src', 'buffer-inject.js')],
   define: { global: 'globalThis', 'process.env.NODE_ENV': '"production"' },
   minify: true,
