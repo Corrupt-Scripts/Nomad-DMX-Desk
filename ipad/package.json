@@ -16,7 +16,8 @@
     "@capacitor/ios": "8.5.3",
     "buffer": "6.0.3",
     "esbuild": "0.25.10",
-    "nomad-udp": "file:plugins/nomad-udp"
+    "nomad-udp": "file:plugins/nomad-udp",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
