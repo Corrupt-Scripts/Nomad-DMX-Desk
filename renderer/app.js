@@ -967,8 +967,8 @@
       num.addEventListener('click', () => call('setChannel', u, ch, null));
       ui.faders.push(f);
     }
-    // 16 faders to a page (32 pages), so each fader is wide enough to grab with a finger or pen.
-    const PER = 16, PAGES = 512 / PER;
+    // 32 faders to a page, stacked in two rows of 16 (16 pages), so every page button fits on screen.
+    const PER = 32, PAGES = 512 / PER;
     ui.fadPage = Math.max(0, Math.min(PAGES - 1, ui.fadPage | 0));
     const banks = el('div', { class: 'fad-banks' }, Array.from({ length: PAGES }, (_, b) =>
       el('button', { 'data-b': String(b), onclick: () => { ui.fadPage = b; showPage(); } }, `${b * PER + 1}–${b * PER + PER}`)));

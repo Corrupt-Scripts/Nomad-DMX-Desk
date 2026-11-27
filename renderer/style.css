@@ -153,18 +153,19 @@ td input.n { width: 72px; }
 /* Faders page */
 .fad-wrap { display: flex; flex-direction: column; gap: 10px; height: 100%; }
 .fad-wrap h3 { display: flex; align-items: center; gap: 10px; margin: 0; }
-.fad-banks { display: flex; gap: 6px; overflow-x: auto; flex: none; touch-action: pan-x; }
-.fad-banks button { padding: 3px 9px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.fad-banks { display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; flex: none; }
+.fad-banks button { padding: 3px 0; font-size: 11px; min-width: 0; color: var(--dim); white-space: nowrap; }
 .fad-banks button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.fad-strip { display: flex; gap: 6px; flex: 1; min-height: 0; overflow: hidden; padding-bottom: 6px; }
-.fad { flex: 1 1 0; min-width: 0; max-width: 120px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 4px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
+.fad-strip { gap: 6px; flex: 1; min-height: 0; overflow: hidden; padding-bottom: 6px; display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+.fad { min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0 3px; overflow: hidden; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
 .fad.patched { border-color: #4a3d78; }
 .fad.prog { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
 .fad-n { padding: 1px 6px; font-size: 12px; font-weight: 700; color: var(--accent2); background: transparent; border: 0; }
-.fad-trk { position: relative; flex: 1; min-height: 110px; width: 38px; background: #0f0c16; border: 1px solid var(--line); border-radius: 15px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: ns-resize; overflow: hidden; }
+.fad-trk { position: relative; flex: 1; min-height: 40px; width: 30px; background: #0f0c16; border: 1px solid var(--line); border-radius: 15px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: ns-resize; overflow: hidden; }
 .fad.prog .fad-trk { border-color: var(--accent2); }
 .fad-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(to top, #5b34c9, var(--accent)); }
 .fad-cap { position: absolute; left: 2px; right: 2px; height: 10px; margin-bottom: -5px; bottom: 0; border-radius: 5px; background: #f1ecfb; box-shadow: 0 1px 4px rgba(0,0,0,.6); pointer-events: none; }
+.fad-v, .fad-n, .fad-l { flex: none; }
 .fad-v { font: 600 13px ui-monospace, Consolas, monospace; }
 .fad-l { width: 100%; padding: 0 3px; text-align: center; font-size: 10px; line-height: 1.2; height: 24px; overflow: hidden; color: var(--dim); }
 .fad-wrap .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
