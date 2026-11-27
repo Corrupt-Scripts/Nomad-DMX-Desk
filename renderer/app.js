@@ -931,7 +931,6 @@
   // One fader for every DMX channel of the chosen universe (512). Each fader is a plain pointer-driven
   // control, so several can be moved at once with fingers or a pen. Moving a fader holds that channel in the
   // programmer; tapping its number releases it.
-  const FAD_W = 58;
   function renderFaders() {
     ui.faders = [];
     const u = show.currentUniverse;
@@ -966,15 +965,19 @@
       const end = (e) => { if (!f.drag) return; f.drag = false; try { trk.releasePointerCapture(e.pointerId); } catch (x) { /* released */ } };
       trk.addEventListener('pointerup', end); trk.addEventListener('pointercancel', end);
       num.addEventListener('click', () => call('setChannel', u, ch, null));
-      ui.faders.push(f); strip.appendChild(root);
+      ui.faders.push(f);
     }
-    const banks = el('div', { class: 'fad-banks' }, Array.from({ length: 16 }, (_, b) =>
-      el('button', { 'data-b': String(b), onclick: () => { strip.scrollTo({ left: b * 32 * (FAD_W + 6), behavior: 'smooth' }); } }, `${b * 32 + 1}–${b * 32 + 32}`)));
-    const markBank = () => {
-      const b = Math.min(15, Math.round(strip.scrollLeft / (32 * (FAD_W + 6))));
-      banks.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.b === String(b)));
+    // 16 faders to a page (32 pages), so each fader is wide enough to grab with a finger or pen.
+    const PER = 16, PAGES = 512 / PER;
+    ui.fadPage = Math.max(0, Math.min(PAGES - 1, ui.fadPage | 0));
+    const banks = el('div', { class: 'fad-banks' }, Array.from({ length: PAGES }, (_, b) =>
+      el('button', { 'data-b': String(b), onclick: () => { ui.fadPage = b; showPage(); } }, `${b * PER + 1}–${b * PER + PER}`)));
+    const showPage = () => {
+      strip.replaceChildren(...ui.faders.slice(ui.fadPage * PER, ui.fadPage * PER + PER).map((f) => f.root));
+      banks.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.b === String(ui.fadPage)));
+      const on = banks.querySelector('button.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      updateLive();
     };
-    strip.addEventListener('scroll', () => { ui.fadScroll = strip.scrollLeft; markBank(); }, { passive: true });
     const head = el('h3', {}, 'Faders',
       el('select', { onchange: (e) => call('setUniverse', parseInt(e.target.value, 10)), value: String(u) },
         Array.from({ length: show.settings.universes }, (_, i) => el('option', { value: String(i + 1) }, `Universe ${i + 1}`))),
@@ -982,8 +985,7 @@
       el('span', { class: 'hint' }, 'Drag a fader to take that channel. Tap its number to give it back.'),
       el('button', { onclick: () => call('clearProgrammer') }, 'Release all'));
     $('#view').replaceChildren(el('div', { class: 'fad-wrap panel' }, head, banks, strip));
-    strip.scrollLeft = ui.fadScroll; markBank();
-    updateLive();
+    showPage();
   }
   function paintFader(f, v, force) {
     if (!force && f.v === v) return;

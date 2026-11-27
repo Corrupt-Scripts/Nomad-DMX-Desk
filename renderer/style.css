@@ -156,12 +156,12 @@ td input.n { width: 72px; }
 .fad-banks { display: flex; gap: 6px; overflow-x: auto; flex: none; touch-action: pan-x; }
 .fad-banks button { padding: 3px 9px; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .fad-banks button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.fad-strip { display: flex; gap: 6px; flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; padding-bottom: 6px; }
-.fad { flex: none; width: 58px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 4px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
+.fad-strip { display: flex; gap: 6px; flex: 1; min-height: 0; overflow: hidden; padding-bottom: 6px; }
+.fad { flex: 1 1 0; min-width: 0; max-width: 120px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0 4px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
 .fad.patched { border-color: #4a3d78; }
 .fad.prog { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
 .fad-n { padding: 1px 6px; font-size: 12px; font-weight: 700; color: var(--accent2); background: transparent; border: 0; }
-.fad-trk { position: relative; flex: 1; min-height: 110px; width: 30px; background: #0f0c16; border: 1px solid var(--line); border-radius: 15px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: ns-resize; overflow: hidden; }
+.fad-trk { position: relative; flex: 1; min-height: 110px; width: 38px; background: #0f0c16; border: 1px solid var(--line); border-radius: 15px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: ns-resize; overflow: hidden; }
 .fad.prog .fad-trk { border-color: var(--accent2); }
 .fad-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(to top, #5b34c9, var(--accent)); }
 .fad-cap { position: absolute; left: 2px; right: 2px; height: 10px; margin-bottom: -5px; bottom: 0; border-radius: 5px; background: #f1ecfb; box-shadow: 0 1px 4px rgba(0,0,0,.6); pointer-events: none; }
